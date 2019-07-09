@@ -1,7 +1,9 @@
 [package]
-name = "CryptoPals-Rust"
+name = "crypto_pals_rust"
 version = "0.1.0"
 authors = ["Greg Rubin <rubin@amazon.com>"]
 edition = "2018"
 
 [dependencies]
+failure = "0.1.5"
+base64 = "0.10.1"
