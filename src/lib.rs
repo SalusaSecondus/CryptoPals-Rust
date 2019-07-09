@@ -3,14 +3,14 @@ mod set1;
 #[macro_use]
 extern crate lazy_static;
 
-pub use failure::Error;
 use failure::err_msg;
+pub use failure::Error;
 use std::collections::HashMap;
 
-pub type Result<T>  = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 lazy_static! {
-    static ref MONOGRAM_FREQUENCIES : HashMap<&'static str, f32> = {
+    static ref MONOGRAM_FREQUENCIES: HashMap<&'static str, f32> = {
         let mut m = HashMap::new();
         m.insert(" ", 0.1217);
         m.insert("a", 0.0609);
@@ -43,9 +43,8 @@ lazy_static! {
     };
 }
 
-
-pub fn hex_to_bin(hex : &str) -> Result<Vec<u8>> {
-    let mut result : Vec<u8> = Vec::new();
+pub fn hex_to_bin(hex: &str) -> Result<Vec<u8>> {
+    let mut result: Vec<u8> = Vec::new();
     for hex_byte in string_chunk(hex, 2) {
         let byte = u8::from_str_radix(hex_byte, 16)?;
         result.push(byte);
@@ -54,7 +53,7 @@ pub fn hex_to_bin(hex : &str) -> Result<Vec<u8>> {
     Ok(result)
 }
 
-pub fn bin_to_hex(bin : &Vec<u8>) -> Result<String> {
+pub fn bin_to_hex(bin: &Vec<u8>) -> Result<String> {
     let mut result = String::new();
     for byte in bin {
         result += &format!("{:x}", byte);
@@ -62,15 +61,15 @@ pub fn bin_to_hex(bin : &Vec<u8>) -> Result<String> {
     Ok(result)
 }
 
-pub fn b64_to_bin(b64 : &str) -> Result<Vec<u8>> {
+pub fn b64_to_bin(b64: &str) -> Result<Vec<u8>> {
     Ok(base64::decode(b64)?)
 }
 
-pub fn bin_to_b64(bin : &Vec<u8>) -> Result<String> {
+pub fn bin_to_b64(bin: &Vec<u8>) -> Result<String> {
     Ok(base64::encode(bin))
 }
 
-pub fn xor(v1 : &Vec<u8>, v2 : &Vec<u8>) -> Result<Vec<u8>> {
+pub fn xor(v1: &Vec<u8>, v2: &Vec<u8>) -> Result<Vec<u8>> {
     if v1.len() != v2.len() {
         Err(err_msg("Lengths are not compatible"))
     } else {
@@ -82,8 +81,8 @@ pub fn xor(v1 : &Vec<u8>, v2 : &Vec<u8>) -> Result<Vec<u8>> {
     }
 }
 
-pub fn string_chunk(string : &str, size : usize) -> Vec<&str> {
-    let mut result : Vec<&str> = Vec::new();
+pub fn string_chunk(string: &str, size: usize) -> Vec<&str> {
+    let mut result: Vec<&str> = Vec::new();
     let mut indices = string.char_indices();
 
     let mut start = indices.next().unwrap().0;
@@ -106,9 +105,9 @@ pub fn string_chunk(string : &str, size : usize) -> Vec<&str> {
     result
 }
 
-pub fn monograph_score(string : &str) -> f32 {
-    let mut total : f32 = 0.0;
-    let mut cnts : HashMap<&str, f32> = HashMap::new();
+pub fn monograph_score(string: &str) -> f32 {
+    let mut total: f32 = 0.0;
+    let mut cnts: HashMap<&str, f32> = HashMap::new();
     let mut result = 0.0;
 
     let lowercase = string.to_lowercase();
@@ -124,11 +123,11 @@ pub fn monograph_score(string : &str) -> f32 {
         let sq_diff = diff * diff;
         result += sq_diff;
     }
-    
+
     result
 }
 
-pub fn bytes_to_string(bytes : &Vec<u8>) -> String {
+pub fn bytes_to_string(bytes: &Vec<u8>) -> String {
     String::from_utf8_lossy(bytes).to_string()
     // let mut result = String::new();
     // for b in bytes {
@@ -150,8 +149,7 @@ mod tests {
         let hex = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
         let b64 = "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t";
 
-
-        assert_eq!(b64, bin_to_b64(&hex_to_bin(hex).unwrap()).unwrap());      
+        assert_eq!(b64, bin_to_b64(&hex_to_bin(hex).unwrap()).unwrap());
         assert_eq!(hex, bin_to_hex(&b64_to_bin(b64).unwrap()).unwrap());
     }
 
@@ -162,6 +160,5 @@ mod tests {
         let result = "746865206b696420646f6e277420706c6179";
 
         assert_eq!(result, bin_to_hex(&xor(&val1, &val2).unwrap()).unwrap());
-
     }
 }
