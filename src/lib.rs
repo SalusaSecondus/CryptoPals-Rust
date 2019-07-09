@@ -115,6 +115,10 @@ pub fn monograph_score(string: &str) -> f32 {
         let mono_cnt = cnts.entry(mono).or_insert(0.0);
         *mono_cnt += 1.0;
         total += 1.0;
+        // If this isn't standard ASCII, massively penalize the result
+        if mono.chars().next().unwrap() > 127 as char {
+            result += 1.0;
+        }
     }
 
     for (key, val) in MONOGRAM_FREQUENCIES.iter() {
