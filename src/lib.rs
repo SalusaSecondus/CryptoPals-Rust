@@ -1,129 +1,204 @@
+#![allow(dead_code)]
+
+use anyhow::{Context, Result};
+use lazy_static::lazy_static;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{BufRead, BufReader, Lines},
+    vec,
+};
+
 mod set1;
 
-#[macro_use]
-extern crate lazy_static;
-
-use failure::err_msg;
-pub use failure::Error;
-use std::collections::HashMap;
-
-pub type Result<T> = std::result::Result<T, Error>;
-
-lazy_static! {
-    static ref MONOGRAM_FREQUENCIES: HashMap<&'static str, f32> = {
-        let mut m = HashMap::new();
-        m.insert(" ", 0.1217);
-        m.insert("a", 0.0609);
-        m.insert("b", 0.0105);
-        m.insert("c", 0.0284);
-        m.insert("d", 0.0292);
-        m.insert("e", 0.1136);
-        m.insert("f", 0.0179);
-        m.insert("g", 0.0138);
-        m.insert("h", 0.0341);
-        m.insert("i", 0.0544);
-        m.insert("j", 0.0024);
-        m.insert("k", 0.0041);
-        m.insert("l", 0.0292);
-        m.insert("m", 0.0276);
-        m.insert("n", 0.0544);
-        m.insert("o", 0.0600);
-        m.insert("p", 0.0195);
-        m.insert("q", 0.0024);
-        m.insert("r", 0.0495);
-        m.insert("s", 0.0568);
-        m.insert("t", 0.0803);
-        m.insert("u", 0.0243);
-        m.insert("v", 0.0097);
-        m.insert("w", 0.0138);
-        m.insert("x", 0.0024);
-        m.insert("y", 0.0130);
-        m.insert("z", 0.0003);
-        m
-    };
+fn xor(a: &[u8], b: &[u8]) -> Result<Vec<u8>> {
+    Ok(a.iter().zip(b.iter().cycle()).map(|(a, b)| a ^ b).collect())
 }
 
-pub fn hex_to_bin(hex: &str) -> Result<Vec<u8>> {
-    let mut result: Vec<u8> = Vec::new();
-    for hex_byte in string_chunk(hex, 2) {
-        let byte = u8::from_str_radix(hex_byte, 16)?;
-        result.push(byte);
+const FILE_BASE: &str = r"res\";
+
+pub fn read_file(file_name: &str) -> Result<Lines<BufReader<File>>> {
+    let input = File::open(FILE_BASE.to_owned() + file_name).context("Could not open file")?;
+    let reader = BufReader::new(input);
+
+    Ok(reader.lines())
+}
+
+pub fn file_to_string(file_name: &str) -> Result<String> {
+    let mut input = String::new();
+    for l in read_file(file_name)? {
+        input += &l?;
+    }
+    Ok(input)
+}
+
+fn find_best_single_xor(bin: &[u8]) -> Result<(Vec<u8>, u8, f64)> {
+    let mut best_byte = 0;
+    let mut best_score = f64::MAX;
+    let mut best_guess = Option::None;
+
+    for twiddle in 0..=255u8 {
+        let guess = crate::xor(&bin, &[twiddle])?;
+        let score = crate::monogram_score(&guess);
+        if score < best_score {
+            best_score = score;
+            best_byte = twiddle;
+            best_guess = Option::Some(guess);
+        }
     }
 
-    Ok(result)
+    Ok((best_guess.context("Nothing found")?, best_byte, best_score))
 }
 
-pub fn bin_to_hex(bin: &Vec<u8>) -> Result<String> {
-    let mut result = String::new();
-    for byte in bin {
-        result += &format!("{:x}", byte);
+fn find_best_multi_xor(bin: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+    let mut best_weight = f64::MAX;
+    let mut key_length: usize = 0;
+
+    for possible_length in 1..=40 {
+        let offset = &bin[possible_length..];
+        let (_, weight) = hamming_weight(bin, &offset);
+        if weight < best_weight {
+            best_weight = weight;
+            key_length = possible_length;
+        }
     }
-    Ok(result)
-}
+    let key_length = key_length;
+    let chunks = parallel_chunk(bin, key_length);
 
-pub fn b64_to_bin(b64: &str) -> Result<Vec<u8>> {
-    Ok(base64::decode(b64)?)
-}
-
-pub fn bin_to_b64(bin: &Vec<u8>) -> Result<String> {
-    Ok(base64::encode(bin))
-}
-
-pub fn xor(v1: &Vec<u8>, v2: &Vec<u8>) -> Result<Vec<u8>> {
-    if v1.len() != v2.len() {
-        Err(err_msg("Lengths are not compatible"))
-    } else {
-        let mut result = v1.clone();
-        for i in 0..v1.len() {
-            result[i] ^= v2[i];
-        }
-        Ok(result)
+    let mut key = vec![];
+    for c in chunks {
+        key.push(find_best_single_xor(&c)?.1);
     }
+
+    let plaintext = xor(bin, &key)?;
+
+    Ok((plaintext, key))
 }
 
-pub fn string_chunk(string: &str, size: usize) -> Vec<&str> {
-    let mut result: Vec<&str> = Vec::new();
-    let mut indices = string.char_indices();
+fn parallel_chunk(input: &[u8], width: usize) -> Vec<Vec<u8>> {
+    let mut result = vec![];
+    for _ in 0..width {
+        result.push(vec![]);
+    }
 
-    let mut start = indices.next().unwrap().0;
-    loop {
-        let mut end = Option::None;
-        for _x in 0..size {
-            end = indices.next();
-        }
-        if end.is_some() {
-            let idx_end = end.unwrap().0;
-            let tmp = &string[start..idx_end];
-            result.push(tmp);
-            start = idx_end;
-        } else {
-            let tmp = &string[start..];
-            result.push(tmp);
-            break;
-        }
+    for (idx, b) in input.iter().enumerate() {
+        result[idx % width].push(*b);
     }
     result
 }
 
-pub fn monograph_score(string: &str) -> f32 {
-    let mut total: f32 = 0.0;
-    let mut cnts: HashMap<&str, f32> = HashMap::new();
-    let mut result = 0.0;
+fn hamming_weight(a: &[u8], b: &[u8]) -> (u32, f64) {
+    lazy_static! {
+        static ref WEIGHTS: [u8; 256] = {
+            let mut weights = [0u8; 256];
+            #[allow(clippy::clippy::needless_range_loop)]
+            for i in 0..256 {
+                let mut tmp = 0;
+                if i & 1 != 0 {
+                    tmp += 1;
+                }
+                if i & 2 != 0 {
+                    tmp += 1;
+                }
+                if i & 4 != 0 {
+                    tmp += 1;
+                }
+                if i & 8 != 0 {
+                    tmp += 1;
+                }
+                if i & 16 != 0 {
+                    tmp += 1;
+                }
+                if i & 32 != 0 {
+                    tmp += 1;
+                }
+                if i & 64 != 0 {
+                    tmp += 1;
+                }
+                if i & 128 != 0 {
+                    tmp += 1;
+                }
+                weights[i] = tmp;
+            }
+            weights
+        };
+    };
+    let sum: u32 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(a, b)| WEIGHTS[(a ^ b) as usize] as u32)
+        .sum();
+    let normalized = sum as f64;
+    (sum, normalized / (std::cmp::min(a.len(), b.len()) as f64))
+}
 
-    let lowercase = string.to_lowercase();
-    for mono in string_chunk(&lowercase, 1) {
-        let mono_cnt = cnts.entry(mono).or_insert(0.0);
-        *mono_cnt += 1.0;
-        total += 1.0;
-        // If this isn't standard ASCII, massively penalize the result
-        if mono.chars().next().unwrap() > 127 as char {
-            result += 1.0;
+pub fn monogram_score(bin: &[u8]) -> f64 {
+    lazy_static! {
+        static ref FREQ: HashMap<u8, f64> = {
+            let mut m: HashMap<u8, f64> = HashMap::new();
+            m.insert(b' ', 0.1217);
+            m.insert(b'a', 0.0609);
+            m.insert(b'b', 0.0105);
+            m.insert(b'c', 0.0284);
+            m.insert(b'd', 0.0292);
+            m.insert(b'e', 0.1136);
+            m.insert(b'f', 0.0179);
+            m.insert(b'g', 0.0138);
+            m.insert(b'h', 0.0341);
+            m.insert(b'i', 0.0544);
+            m.insert(b'j', 0.0024);
+            m.insert(b'k', 0.0041);
+            m.insert(b'l', 0.0292);
+            m.insert(b'm', 0.0276);
+            m.insert(b'n', 0.0544);
+            m.insert(b'o', 0.0600);
+            m.insert(b'p', 0.0195);
+            m.insert(b'q', 0.0024);
+            m.insert(b'r', 0.0495);
+            m.insert(b's', 0.0568);
+            m.insert(b't', 0.0803);
+            m.insert(b'u', 0.0243);
+            m.insert(b'v', 0.0097);
+            m.insert(b'w', 0.0138);
+            m.insert(b'x', 0.0024);
+            m.insert(b'y', 0.0130);
+            m.insert(b'z', 0.0003);
+            m
+        };
+    };
+    let mut counts: HashMap<u8, f64> = HashMap::new();
+    let total = bin.len() as f64;
+    for b in bin {
+        if b > &127 {
+            return 100.0;
         }
+        if b <= &8 || (b >= &11 && b <= &31) {
+            return 100.0;
+        }
+        if !b.is_ascii() {
+            return 100.0;
+        }
+        let mut b = b.to_ascii_lowercase();
+        if !FREQ.contains_key(&b) {
+            b = 0;
+        }
+        *counts.entry(b).or_insert(0.0) += &1.0;
     }
 
-    for (key, val) in MONOGRAM_FREQUENCIES.iter() {
-        let freq = cnts.get(key).unwrap_or(&0.0) / total;
-        let diff = freq - val;
+    let mut result = 0.0;
+    for k in FREQ.keys() {
+        let found = counts.get(&k).unwrap_or(&0.0) / total;
+        let expected = FREQ.get(&k).unwrap();
+        let diff = found - expected;
+        let sq_diff = diff * diff;
+        result += sq_diff;
+    }
+
+    // Other characters
+    {
+        let found = counts.get(&0).unwrap_or(&0.0) / total;
+        let expected = 0.0657;
+        let diff = found - expected;
         let sq_diff = diff * diff;
         result += sq_diff;
     }
@@ -131,38 +206,15 @@ pub fn monograph_score(string: &str) -> f32 {
     result
 }
 
-pub fn bytes_to_string(bytes: &Vec<u8>) -> String {
-    String::from_utf8_lossy(bytes).to_string()
-    // let mut result = String::new();
-    // for b in bytes {
-    //     // if *b < 128 {
-    //         result.push(*b as char)
-    //     // } else {
-    //     //     result.push('\u{FFFD}');
-    //     // }
-    // }
-    // result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn set1_prob1() {
-        let hex = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
-        let b64 = "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t";
-
-        assert_eq!(b64, bin_to_b64(&hex_to_bin(hex).unwrap()).unwrap());
-        assert_eq!(hex, bin_to_hex(&b64_to_bin(b64).unwrap()).unwrap());
-    }
-
-    #[test]
-    fn set1_prob2() {
-        let val1 = hex_to_bin("1c0111001f010100061a024b53535009181c").unwrap();
-        let val2 = hex_to_bin("686974207468652062756c6c277320657965").unwrap();
-        let result = "746865206b696420646f6e277420706c6179";
-
-        assert_eq!(result, bin_to_hex(&xor(&val1, &val2).unwrap()).unwrap());
+    fn hamming() {
+        let val1 = b"this is a test";
+        let val2 = b"wokka wokka!!!";
+        let (weight, _) = hamming_weight(val1, val2);
+        assert_eq!(37, weight);
     }
 }
