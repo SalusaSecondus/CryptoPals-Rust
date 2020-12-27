@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use crate::*;
-    use anyhow::Result;
+    use anyhow::{bail, Result};
     use hex::encode as hex_encode;
     use hex::decode as hex_decode;
     use aes::AesKey;
@@ -93,5 +95,24 @@ mod tests {
         let plaintext = String::from_utf8(plaintext)?;
         println!("Challenge 7: {}", plaintext);
         Ok(())
+    }
+
+    #[test]
+    fn challenge_8() -> Result<()> {
+        let mut ciphertexts = vec![];
+        for l in crate::read_file("8.txt")? {
+            ciphertexts.push(hex_decode(l?)?);
+        }
+
+        for (idx, c) in ciphertexts.iter().enumerate() {
+            let mut seen = HashSet::new();
+            for chunk in c.chunks_exact(16) {
+                if !seen.insert(chunk) {
+                    println!("Ciphertext {} has duplicate block {}", idx, hex_encode(chunk));
+                    return Ok(());
+                }
+            }
+        }
+        bail!("No duplicates found");
     }
 }
