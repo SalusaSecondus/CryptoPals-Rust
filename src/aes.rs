@@ -104,11 +104,10 @@ impl AesKey {
         
         // Initial round key addition
         for (idx, b) in result.iter_mut().enumerate() {
-            *b ^= round_keys[1][idx];
+            *b ^= round_keys[0][idx];
         }
-
         // Internal rounds
-        for round in 2..self.rounds {
+        for round in 1..self.rounds {
             // SubBytes
             for b in result.iter_mut() {
                 *b = SBOX[*b as usize];
@@ -141,6 +140,10 @@ impl AesKey {
             *b ^= round_keys[self.rounds][idx];
         }
         result
+    }
+
+    pub fn decrypt_block(&self, block: &[u8]) -> AesBlock {
+        todo!();
     }
 }
 
@@ -226,10 +229,7 @@ impl FromStr for AesKey {
 
 impl Display for AesKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        for (num, key) in self.round_keys.iter().enumerate() {
-            if num > self.rounds {
-                break;
-            }
+        for (num, key) in self.round_keys.iter().take(self.rounds + 1) .enumerate() {
             writeln!(f, "Round {}:\t{}", num, hex::encode(key))?;
         }
         Ok(())
@@ -328,7 +328,8 @@ mod tests {
     #[test]
     fn encrypt_kats() -> Result<()> {
         let key: AesKey = "00000000000000000000000000000000".parse()?;
-        let kats = [["f34481ec3cc627bacd5dc3fb08f273e6", "0336763e966d92595a567cc9ce537f5e"],
+        let kats = [
+                                ["f34481ec3cc627bacd5dc3fb08f273e6", "0336763e966d92595a567cc9ce537f5e"],
                                 ["9798c4640bad75c7c3227db910174e72", "a9a1631bf4996954ebc093957b234589"],
                                 ["96ab5c2ff612d9dfaae8c31f30c42168", "ff4f8391a6a40ca5b25d23bedd44a597"],
                                 ["6a118a874519e64e9963798a503f1d35", "dc43be40be0e53712f7e2bf5ca707209"],
