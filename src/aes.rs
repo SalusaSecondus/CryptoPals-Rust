@@ -252,7 +252,7 @@ fn inv_shift_rows(r: &mut [u8]) {
     r.copy_from_slice(&tmp);
 }
 
-fn gmul(a: u8, b: u8) -> u8 {    
+fn gmul(a: u8, b: u8) -> u8 {
     let mut a = a;
     let mut b = b;
     let mut p = 0u8;
