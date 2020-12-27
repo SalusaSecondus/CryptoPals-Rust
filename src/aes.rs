@@ -96,9 +96,8 @@ impl AesKey {
         Ok(AesKey { round_keys, rounds })
     }
 
-    pub fn encrypt_block(&self, block: &[u8]) -> AesBlock {
-        let mut result = [0; 16];
-        result.clone_from_slice(block);
+    pub fn encrypt_block(&self, block: &[u8]) -> Vec<u8> {
+        let mut result = Vec::from(block);
 
         let round_keys = self.round_keys;
 
@@ -142,9 +141,8 @@ impl AesKey {
         result
     }
 
-    pub fn decrypt_block(&self, block: &[u8]) -> AesBlock {
-        let mut result = [0; 16];
-        result.clone_from_slice(block);
+    pub fn decrypt_block(&self, block: &[u8]) -> Vec<u8> {
+        let mut result = Vec::from(block);
 
         let round_keys = self.round_keys;
 
@@ -238,18 +236,20 @@ fn sub_word(word: &[u8]) -> Result<[u8; 4]> {
     Ok(result)
 }
 
-fn shift_rows(r: &mut [u8; 16]) {
-    *r = [
+fn shift_rows(r: &mut [u8]) {
+    let tmp = [
         r[0], r[5], r[10], r[15], r[4], r[9], r[14], r[3], r[8], r[13], r[2], r[7], r[12], r[1],
         r[6], r[11],
     ];
+    r.copy_from_slice(&tmp);
 }
 
-fn inv_shift_rows(r: &mut [u8; 16]) {
-    *r = [
+fn inv_shift_rows(r: &mut [u8]) {
+    let tmp = [
         r[0], r[13], r[10], r[7], r[4], r[1], r[14], r[11], r[8], r[5], r[2], r[15], r[12], r[9],
         r[6], r[3],
     ];
+    r.copy_from_slice(&tmp);
 }
 
 fn gmul(a: u8, b: u8) -> u8 {    
@@ -572,7 +572,7 @@ mod tests {
             let expected = pair[1];
 
             let result = key.encrypt_block(&input);
-            assert_eq!(expected, hex::encode(result));
+            assert_eq!(expected, hex::encode(&result));
             let decrypted = key.decrypt_block(&result);
             assert_eq!(pair[0], hex::encode(decrypted));
         }
@@ -670,7 +670,7 @@ mod tests {
             let expected = pair[1];
 
             let result = key.encrypt_block(&plaintext);
-            assert_eq!(expected, hex::encode(result));
+            assert_eq!(expected, hex::encode(&result));
 
             let decrypted = key.decrypt_block(&result);
             assert_eq!("00000000000000000000000000000000", hex::encode(decrypted));

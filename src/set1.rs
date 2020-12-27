@@ -4,6 +4,7 @@ mod tests {
     use anyhow::Result;
     use hex::encode as hex_encode;
     use hex::decode as hex_decode;
+    use aes::AesKey;
 
     #[test]
     fn challenge_1() -> Result<()> {
@@ -79,6 +80,18 @@ mod tests {
         let input = base64::decode(&input)?;
         let pieces = find_best_multi_xor(&input)?;
         println!("Challenge 6: {}\n\n{}", hex_encode(&pieces.1), String::from_utf8_lossy(&pieces.0));
+        Ok(())
+    }
+
+    #[test]
+    fn challenge_7() -> Result<()> {
+        let key: AesKey = AesKey::new(b"YELLOW SUBMARINE")?;
+        let input = file_to_string("7.txt")?;
+        let input = base64::decode(&input)?;
+
+        let plaintext: Vec<u8> = input.chunks_exact(16).flat_map(|block| key.decrypt_block(block)).collect();
+        let plaintext = String::from_utf8(plaintext)?;
+        println!("Challenge 7: {}", plaintext);
         Ok(())
     }
 }
