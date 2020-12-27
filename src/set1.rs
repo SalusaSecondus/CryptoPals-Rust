@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use anyhow::{Context, Result};
+    use anyhow::Result;
     use hex::encode as hex_encode;
     use hex::decode as hex_decode;
 
@@ -18,7 +18,7 @@ mod tests {
         let val1 = hex_decode("1c0111001f010100061a024b53535009181c")?;
         let val2 = hex_decode("686974207468652062756c6c277320657965")?;
 
-        let result = crate::xor(&val1, &val2)?;
+        let result = crate::xor(&val1, &val2);
         assert_eq!("746865206b696420646f6e277420706c6179", hex_encode(result));
 
         Ok(())
@@ -64,7 +64,7 @@ mod tests {
         let plaintext = b"Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal";
         // let plaintext = text.as_bytes();
         let key = b"ICE";
-        let ciphertext = crate::xor(plaintext, key)?;
+        let ciphertext = crate::xor(plaintext, key);
 
         println!("Challenge 1.5: {}", hex_encode(&ciphertext));
         assert_eq!(expected_hex, hex_encode(&ciphertext));

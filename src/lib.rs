@@ -9,10 +9,11 @@ use std::{
     vec,
 };
 
+mod aes;
 mod set1;
 
-fn xor(a: &[u8], b: &[u8]) -> Result<Vec<u8>> {
-    Ok(a.iter().zip(b.iter().cycle()).map(|(a, b)| a ^ b).collect())
+fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
+    a.iter().zip(b.iter().cycle()).map(|(a, b)| a ^ b).collect()
 }
 
 const FILE_BASE: &str = r"res\";
@@ -38,7 +39,7 @@ fn find_best_single_xor(bin: &[u8]) -> Result<(Vec<u8>, u8, f64)> {
     let mut best_guess = Option::None;
 
     for twiddle in 0..=255u8 {
-        let guess = crate::xor(&bin, &[twiddle])?;
+        let guess = crate::xor(&bin, &[twiddle]);
         let score = crate::monogram_score(&guess);
         if score < best_score {
             best_score = score;
@@ -70,7 +71,7 @@ fn find_best_multi_xor(bin: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
         key.push(find_best_single_xor(&c)?.1);
     }
 
-    let plaintext = xor(bin, &key)?;
+    let plaintext = xor(bin, &key);
 
     Ok((plaintext, key))
 }
