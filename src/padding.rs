@@ -38,7 +38,6 @@ fn pkcs7_unpad(data: &[u8], width: usize) -> Result<Vec<u8>> {
     ensure!(pad_length > 0 && pad_length <= width as u8, "Invalid pad length");
 
     let (result, padding) = data.split_at(data.len() - pad_length as usize);
-    println!("{:?}\n{:?}", result, padding);
 
     // Ensure all padding bytes are valid
     ensure!(padding.iter().filter(|b| **b != pad_length).count() == 0, "Bad padding byte");

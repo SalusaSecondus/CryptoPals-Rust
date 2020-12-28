@@ -359,17 +359,18 @@ mod tests {
     }
 
     mod set2 {
-        use crate::aes::AesKey;
+        use crate::{aes::AesKey, padding::Padding};
         use anyhow::Result;
 
         #[test]
+        #[ignore]
         fn challenge_10() -> Result<()> {
             let key = AesKey::new(b"YELLOW SUBMARINE")?;
             let iv = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
             let ciphertext = base64::decode(&crate::file_to_string("10.txt")?)?;
 
-            let plaintext = key.decrypt_cbc(&iv, &ciphertext)?;
+            let plaintext = Padding::Pkcs7Padding(16).unpad(&key.decrypt_cbc(&iv, &ciphertext)?)?;
 
             let plaintext = String::from_utf8(plaintext)?;
 
