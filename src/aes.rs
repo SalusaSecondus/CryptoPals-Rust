@@ -3,8 +3,10 @@ use anyhow::{bail, ensure, Result};
 use core::fmt::Display;
 use lazy_static::lazy_static;
 use std::str::FromStr;
-type RoundKeys = [[u8; 16]; 15];
-type AesBlock = [u8; 16];
+
+const BLOCK_SIZE: usize = 16;
+type RoundKeys = [[u8; BLOCK_SIZE]; 15];
+type AesBlock = [u8; BLOCK_SIZE];
 
 // This is a horribly insecure implementation of AES. Don't use it for anything!
 
@@ -69,7 +71,7 @@ impl AesKey {
             _ => bail!("Invalid key length"),
         };
 
-        let mut round_keys = [[0; 16]; 15];
+        let mut round_keys = [[0; BLOCK_SIZE]; 15];
 
         for i in 0..4 * (rounds + 1) {
             if i < N {
@@ -94,6 +96,33 @@ impl AesKey {
         }
 
         Ok(AesKey { round_keys, rounds })
+    }
+
+    pub fn encrypt_cbc(&self, iv: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+        ensure!(plaintext.len() % BLOCK_SIZE == 0, "Not a multiple of the block size");
+        ensure!(iv.len() >= BLOCK_SIZE, "IV is not long enough");
+
+        let mut previous_block = Vec::from(&iv[iv.len()-16..]);
+        Ok(plaintext.chunks_exact(BLOCK_SIZE).flat_map(|pt_block| 
+            {
+                let ct_block = self.encrypt_block(&xor(&previous_block, pt_block));
+                previous_block.copy_from_slice(&ct_block);
+                ct_block
+            }).collect())
+    }
+
+
+    pub fn decrypt_cbc(&self, iv: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+        ensure!(plaintext.len() % BLOCK_SIZE == 0, "Not a multiple of the block size");
+        ensure!(iv.len() >= BLOCK_SIZE, "IV is not long enough");
+
+        let mut previous_block = Vec::from(&iv[iv.len()-16..]);
+        Ok(plaintext.chunks_exact(BLOCK_SIZE).flat_map(|ct_block| 
+            {
+                let pt_block = xor(&self.decrypt_block(ct_block), &previous_block);
+                previous_block.copy_from_slice(&ct_block);
+                pt_block
+            }).collect())
     }
 
     pub fn encrypt_block(&self, block: &[u8]) -> Vec<u8> {
