@@ -11,6 +11,7 @@ use std::{
 
 mod aes;
 mod padding;
+mod oracles;
 
 fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
     a.iter().zip(b.iter().cycle()).map(|(a, b)| a ^ b).collect()
@@ -359,7 +360,9 @@ mod tests {
     }
 
     mod set2 {
-        use crate::{aes::AesKey, padding::Padding};
+        use std::collections::HashSet;
+
+        use crate::{aes::AesKey, oracles, padding::Padding};
         use anyhow::Result;
 
         #[test]
@@ -376,6 +379,26 @@ mod tests {
 
             println!("Challenge 10: {}", plaintext);
 
+            Ok(())
+        }
+
+        #[test]
+        fn challenge_11() -> Result<()> {
+            let plaintext = [0u8; 128];
+            for _ in 0 .. 100 {
+                let (ciphertext, cbc) = oracles::Challenge11Oracle::encrypt(&plaintext)?;
+
+                let mut seen = HashSet::new();
+                let mut guess = true;
+                for chunk in ciphertext.chunks_exact(16) {
+                    if !seen.insert(chunk) {
+                        guess = false;
+                        break;
+                    }
+                }
+
+                assert_eq!(cbc, guess);
+            }
             Ok(())
         }
     }

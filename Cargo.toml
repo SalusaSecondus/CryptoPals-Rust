@@ -9,4 +9,5 @@ hex = "0.4.2"
 base64 = "0.13.0"
 lazy_static = "1.4.0"
 anyhow = "1"
-rand = "0.8.0"
+rand = {version = "0.8.0", features = ["getrandom"]}
+rand_core = {version = "0.6.0", features = ["getrandom"]}
