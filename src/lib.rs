@@ -402,9 +402,31 @@ mod tests {
             Ok(())
         }
 
+        #[test]
         fn challenge_12() -> Result<()> {
             let oracle = oracles::Challenge12Oracle::new();
-            // println!("12: {}", oracle.key);
+            // Determine block size
+            let mut block_size = 0;
+            {
+                let mut prev_size = Option::None;
+                let mut pt = vec![];
+                for _len in 0 .. 40 {
+                    let ct_len = oracle.encrypt(&pt)?.len();
+                    if let Some(prev) = prev_size {
+                        if prev != ct_len {
+                            block_size = ct_len - prev;
+                            break;
+                        }
+                    } else {
+                        prev_size = Option::Some(ct_len);
+                    }
+                    
+                    pt.push(0);
+                }
+            }
+            let block_size = block_size;
+            // Skipping ECB detection because I've done it so many times.
+            println!("12: {}", block_size);
             Ok(())
         }
     }
