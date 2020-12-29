@@ -10,8 +10,8 @@ use std::{
 };
 
 mod aes;
-mod padding;
 mod oracles;
+mod padding;
 
 fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
     a.iter().zip(b.iter().cycle()).map(|(a, b)| a ^ b).collect()
@@ -228,7 +228,7 @@ mod tests {
         use anyhow::{bail, Result};
         use hex::decode as hex_decode;
         use hex::encode as hex_encode;
-    
+
         #[test]
         fn challenge_1() -> Result<()> {
             let hex = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
@@ -236,27 +236,27 @@ mod tests {
                 "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t",
                 base64::encode(&hex::decode(hex)?)
             );
-    
+
             Ok(())
         }
-    
+
         #[test]
         fn challenge_2() -> Result<()> {
             let val1 = hex_decode("1c0111001f010100061a024b53535009181c")?;
             let val2 = hex_decode("686974207468652062756c6c277320657965")?;
-    
+
             let result = crate::xor(&val1, &val2);
             assert_eq!("746865206b696420646f6e277420706c6179", hex_encode(result));
-    
+
             Ok(())
         }
-    
+
         #[test]
         fn challenge_3() -> Result<()> {
             let input =
                 hex_decode("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")?;
             let (best_guess, _, _) = find_best_single_xor(&input)?;
-    
+
             println!("1.3: Hex: {}", hex_encode(&best_guess));
             println!("1.3: Answer: {}", String::from_utf8_lossy(&best_guess));
             assert_eq!(
@@ -265,12 +265,12 @@ mod tests {
             );
             Ok(())
         }
-    
+
         #[test]
         fn challenge_4() -> Result<()> {
             let mut best_score = f64::MAX;
             let mut best_guess = Option::None;
-    
+
             for line in crate::read_file("1_4.txt")? {
                 let line = hex_decode(line?)?;
                 let (guess, _, score) = find_best_single_xor(&line)?;
@@ -279,7 +279,7 @@ mod tests {
                     best_guess = Option::Some(guess);
                 }
             }
-    
+
             let best_guess = best_guess.unwrap();
             println!("1.4: Hex: {}", hex_encode(&best_guess));
             println!("1.4: Answer: {}", String::from_utf8_lossy(&best_guess));
@@ -287,10 +287,10 @@ mod tests {
                 "4e6f77207468617420746865207061727479206973206a756d70696e670a",
                 hex_encode(&best_guess)
             );
-    
+
             Ok(())
         }
-    
+
         #[test]
         fn challenge_5() -> Result<()> {
             let expected_hex = "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f";
@@ -299,13 +299,13 @@ mod tests {
             // let plaintext = text.as_bytes();
             let key = b"ICE";
             let ciphertext = crate::xor(plaintext, key);
-    
+
             println!("Challenge 1.5: {}", hex_encode(&ciphertext));
             assert_eq!(expected_hex, hex_encode(&ciphertext));
-    
+
             Ok(())
         }
-    
+
         #[test]
         #[ignore = "large_output"]
         fn challenge_6() -> Result<()> {
@@ -319,13 +319,13 @@ mod tests {
             );
             Ok(())
         }
-    
+
         #[test]
         fn challenge_7() -> Result<()> {
             let key: AesKey = AesKey::new(b"YELLOW SUBMARINE")?;
             let input = file_to_string("7.txt")?;
             let input = base64::decode(&input)?;
-    
+
             let plaintext: Vec<u8> = input
                 .chunks_exact(16)
                 .flat_map(|block| key.decrypt_block(block))
@@ -334,14 +334,14 @@ mod tests {
             println!("Challenge 7: {}", plaintext);
             Ok(())
         }
-    
+
         #[test]
         fn challenge_8() -> Result<()> {
             let mut ciphertexts = vec![];
             for l in crate::read_file("8.txt")? {
                 ciphertexts.push(hex_decode(l?)?);
             }
-    
+
             for (idx, c) in ciphertexts.iter().enumerate() {
                 let mut seen = HashSet::new();
                 for chunk in c.chunks_exact(16) {
@@ -364,6 +364,7 @@ mod tests {
 
         use crate::{aes::AesKey, oracles, padding::Padding};
         use anyhow::Result;
+        use oracles::Challenge13Oracle;
 
         #[test]
         #[ignore]
@@ -385,7 +386,7 @@ mod tests {
         #[test]
         fn challenge_11() -> Result<()> {
             let plaintext = [0u8; 128];
-            for _ in 0 .. 100 {
+            for _ in 0..100 {
                 let (ciphertext, cbc) = oracles::Challenge11Oracle::encrypt(&plaintext)?;
 
                 let mut seen = HashSet::new();
@@ -403,7 +404,7 @@ mod tests {
         }
 
         #[test]
-        #[ignored]
+        #[ignore]
         fn challenge_12() -> Result<()> {
             let oracle = oracles::Challenge12Oracle::new();
             // Determine block size
@@ -411,7 +412,7 @@ mod tests {
             let mut block_size = 0;
             {
                 let mut pt = vec![];
-                for _len in 0 .. 40 {
+                for _len in 0..40 {
                     let new_len = oracle.encrypt(&pt)?.len();
                     if new_len != ct_len {
                         block_size = new_len - ct_len;
@@ -424,26 +425,29 @@ mod tests {
             // Skipping ECB detection because I've done it so many times.
 
             // Start guessing and decrypting
-            let a_block = [b'A'; 16];
+            let mut a_block = vec![];
+            a_block.extend(std::iter::repeat(b'A').take(block_size));
+            let a_block = a_block;
+
             // We start with a dummy value just to make things easier and will remove it at the end.
-            let mut decrypted = Vec::from(a_block);
+            let mut decrypted = a_block.clone();
 
             let mut offset = 0;
             while offset < ct_len {
-
-                for byte_to_guess in 1..=16 {
+                for byte_to_guess in 1..=block_size {
                     // println!("Decrypted: {}", String::from_utf8_lossy(&decrypted));
-                    let mut challenge = Vec::from(&decrypted[decrypted.len() - 15..decrypted.len()]);
+                    let mut challenge =
+                        Vec::from(&decrypted[decrypted.len() - block_size+1..decrypted.len()]);
 
-                    challenge.extend(&a_block[..(16-byte_to_guess+1)]);
+                    challenge.extend(&a_block[..(block_size - byte_to_guess + 1)]);
                     for guess in 0..=255 {
                         // println!("Guess: {} {} {}", offset, byte_to_guess, guess);
                         challenge[15] = guess;
                         // println!("Challenge: {}", hex::encode(&challenge));
 
                         let ct = oracle.encrypt(&challenge)?;
-                        let guess_block = &ct[0..16];
-                        let target_block = &ct[offset+16..offset+32];
+                        let guess_block = &ct[0..block_size];
+                        let target_block = &ct[offset + block_size..offset + block_size+block_size];
                         // println!("\tBlocks: {} {}", hex::encode(guess_block), hex::encode(target_block));
 
                         if guess_block == target_block {
@@ -452,12 +456,36 @@ mod tests {
                             break;
                         }
                     }
-
                 }
-                offset += 16;
+                offset += block_size;
             }
 
-            println!("Challenge 12:\n{}", String::from_utf8_lossy(&decrypted[16..decrypted.len()]));
+            println!(
+                "Challenge 12:\n{}",
+                String::from_utf8_lossy(&decrypted[block_size..decrypted.len()])
+            );
+            Ok(())
+        }
+
+        #[test]
+        fn challenge_13() -> Result<()> {
+            let oracle = Challenge13Oracle::new();
+            let role_block = oracle.profile_for(&"__________admin")?;
+            let role_block = role_block.chunks_exact(16).next().unwrap();
+
+            let padding_block = oracle.profile_for(&"____admin")?;
+            let padding_block = padding_block.chunks_exact(16).last().unwrap();
+
+            let victim = oracle.profile_for(&"gr@sample.com")?;
+
+            let mut attack = vec![];
+            attack.extend_from_slice(&victim[0..32]);
+            attack.extend_from_slice(role_block);
+            attack.extend_from_slice(padding_block);
+
+            assert!(oracle.is_admin(&attack));
+            assert_eq!("admin", oracle.get_role(&attack)?);
+
             Ok(())
         }
     }

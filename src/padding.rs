@@ -1,7 +1,7 @@
 use anyhow::{ensure, Result};
 
 pub enum Padding {
-    Pkcs7Padding(usize)
+    Pkcs7Padding(usize),
 }
 
 impl Padding {
@@ -32,15 +32,24 @@ fn pkcs7_pad(data: &[u8], width: usize) -> Result<Vec<u8>> {
 
 fn pkcs7_unpad(data: &[u8], width: usize) -> Result<Vec<u8>> {
     ensure!(width < 256, "Invalid width");
-    ensure!(data.len() % width == 0 && !data.is_empty(), "Bad input length");
+    ensure!(
+        data.len() % width == 0 && !data.is_empty(),
+        "Bad input length"
+    );
 
     let pad_length = *data.last().unwrap();
-    ensure!(pad_length > 0 && pad_length <= width as u8, "Invalid pad length");
+    ensure!(
+        pad_length > 0 && pad_length <= width as u8,
+        "Invalid pad length"
+    );
 
     let (result, padding) = data.split_at(data.len() - pad_length as usize);
 
     // Ensure all padding bytes are valid
-    ensure!(padding.iter().filter(|b| **b != pad_length).count() == 0, "Bad padding byte");
+    ensure!(
+        padding.iter().filter(|b| **b != pad_length).count() == 0,
+        "Bad padding byte"
+    );
 
     let result = Vec::from(result);
 
@@ -49,8 +58,8 @@ fn pkcs7_unpad(data: &[u8], width: usize) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
     use super::Padding;
+    use anyhow::Result;
 
     #[test]
     fn challenge_9() -> Result<()> {
@@ -58,7 +67,7 @@ mod tests {
         let expected = b"YELLOW SUBMARINE\x04\x04\x04\x04";
 
         let padded = Padding::Pkcs7Padding(20).pad(input)?;
-        
+
         assert_eq!(expected, padded.as_slice());
 
         let unpadded = Padding::Pkcs7Padding(20).unpad(&padded)?;

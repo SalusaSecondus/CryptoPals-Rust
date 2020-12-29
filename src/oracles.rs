@@ -1,4 +1,6 @@
-use anyhow::Result;
+use std::collections::HashMap;
+
+use anyhow::{ensure, Context, Result};
 use lazy_static::lazy_static;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
@@ -47,7 +49,7 @@ impl Challenge11Oracle {
 }
 
 pub struct Challenge12Oracle {
-    key: AesKey
+    key: AesKey,
 }
 
 impl Challenge12Oracle {
@@ -55,7 +57,7 @@ impl Challenge12Oracle {
         let mut raw_key = [0u8; 16];
         OsRng.fill_bytes(&mut raw_key);
         let key = AesKey::new(&raw_key).unwrap();
-        Challenge12Oracle{key}
+        Challenge12Oracle { key }
     }
 
     pub fn encrypt(&self, prefix: &[u8]) -> Result<Vec<u8>> {
@@ -69,4 +71,77 @@ impl Challenge12Oracle {
         let padded = Padding::Pkcs7Padding(16).pad(&plaintext)?;
         Ok(self.key.encrypt_ecb(&padded)?)
     }
+}
+
+pub struct Challenge13Oracle {
+    key: AesKey,
+}
+
+impl Challenge13Oracle {
+    pub fn new() -> Challenge13Oracle {
+        let mut raw_key = [0u8; 16];
+        OsRng.fill_bytes(&mut raw_key);
+        let key = AesKey::new(&raw_key).unwrap();
+        Challenge13Oracle { key }
+    }
+
+    fn parse_kv(s: &str) -> Result<HashMap<String, String>> {
+        let mut result = HashMap::new();
+        for pairs in s.split('&')  {
+            let mut parts = pairs.splitn(2,'=');
+            let key = parts.next().context("Missing key")?;
+            let value = parts.next().context("Missing value")?;
+            
+            result.insert(key.to_owned(), value.to_owned());
+        }
+        Ok(result)
+    }
+
+    pub fn is_admin(&self, ciphertext: &[u8]) -> bool {
+        let invalid_str = String::from("invalid");
+        self.key.decrypt_ecb(ciphertext)
+            .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt))
+            .and_then(|pt| String::from_utf8(pt).context("Bad UTF8"))
+            .and_then(|pt| Challenge13Oracle::parse_kv(&pt))
+            .map(|m| m.get("role").unwrap_or(&invalid_str) == "admin")
+            .unwrap_or(false)
+        
+    }
+
+    pub fn get_role(&self, ciphertext: &[u8]) -> Result<String> {
+        let invalid_str = String::from("invalid");
+        self.key.decrypt_ecb(ciphertext)
+            .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt))
+            .and_then(|pt| String::from_utf8(pt).context("Bad UTF8"))
+            .and_then(|pt| Challenge13Oracle::parse_kv(&pt))
+            .map(|m| m.get("role").unwrap_or(&invalid_str).to_owned())
+    }
+
+    pub fn profile_for(&self, email: &str) -> Result<Vec<u8>> {
+        ensure!(!email.contains('&'), "Email contains invalid character");
+        ensure!(!email.contains('='), "Email contains invalid character");
+
+        let mut pt: Vec<u8> = Vec::from(&b"email="[..]);
+        pt.extend(email.as_bytes().iter());
+        pt.extend_from_slice(b"&uid=10&role=user");
+
+        self.key.encrypt_ecb(&Padding::Pkcs7Padding(16).pad(&pt)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use super::Challenge13Oracle;
+
+    #[test]
+    fn chall13_smoke() -> Result<()> {
+        let oracle = Challenge13Oracle::new();
+        let ct = oracle.profile_for("salusa@salusa.dev")?;
+        assert_eq!(false, oracle.is_admin(&ct));
+        assert_eq!("user", oracle.get_role(&ct)?);
+
+        Ok(())
+    }
+
 }
