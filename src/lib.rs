@@ -403,30 +403,61 @@ mod tests {
         }
 
         #[test]
+        #[ignored]
         fn challenge_12() -> Result<()> {
             let oracle = oracles::Challenge12Oracle::new();
             // Determine block size
+            let ct_len = oracle.encrypt(&vec![])?.len();
             let mut block_size = 0;
             {
-                let mut prev_size = Option::None;
                 let mut pt = vec![];
                 for _len in 0 .. 40 {
-                    let ct_len = oracle.encrypt(&pt)?.len();
-                    if let Some(prev) = prev_size {
-                        if prev != ct_len {
-                            block_size = ct_len - prev;
-                            break;
-                        }
-                    } else {
-                        prev_size = Option::Some(ct_len);
+                    let new_len = oracle.encrypt(&pt)?.len();
+                    if new_len != ct_len {
+                        block_size = new_len - ct_len;
+                        break;
                     }
-                    
                     pt.push(0);
                 }
             }
             let block_size = block_size;
             // Skipping ECB detection because I've done it so many times.
-            println!("12: {}", block_size);
+
+            // Start guessing and decrypting
+            let a_block = [b'A'; 16];
+            // We start with a dummy value just to make things easier and will remove it at the end.
+            let mut decrypted = Vec::from(a_block);
+
+            let mut offset = 0;
+            while offset < ct_len {
+
+                for byte_to_guess in 1..=16 {
+                    // println!("Decrypted: {}", String::from_utf8_lossy(&decrypted));
+                    let mut challenge = Vec::from(&decrypted[decrypted.len() - 15..decrypted.len()]);
+
+                    challenge.extend(&a_block[..(16-byte_to_guess+1)]);
+                    for guess in 0..=255 {
+                        // println!("Guess: {} {} {}", offset, byte_to_guess, guess);
+                        challenge[15] = guess;
+                        // println!("Challenge: {}", hex::encode(&challenge));
+
+                        let ct = oracle.encrypt(&challenge)?;
+                        let guess_block = &ct[0..16];
+                        let target_block = &ct[offset+16..offset+32];
+                        // println!("\tBlocks: {} {}", hex::encode(guess_block), hex::encode(target_block));
+
+                        if guess_block == target_block {
+                            decrypted.push(guess);
+                            // println!("Found! {}", guess);
+                            break;
+                        }
+                    }
+
+                }
+                offset += 16;
+            }
+
+            println!("Challenge 12:\n{}", String::from_utf8_lossy(&decrypted[16..decrypted.len()]));
             Ok(())
         }
     }
