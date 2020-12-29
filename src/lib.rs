@@ -401,5 +401,11 @@ mod tests {
             }
             Ok(())
         }
+
+        fn challenge_12() -> Result<()> {
+            let oracle = oracles::Challenge12Oracle::new();
+            // println!("12: {}", oracle.key);
+            Ok(())
+        }
     }
 }

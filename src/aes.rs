@@ -99,30 +99,61 @@ impl AesKey {
     }
 
     pub fn encrypt_cbc(&self, iv: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
-        ensure!(plaintext.len() % BLOCK_SIZE == 0, "Not a multiple of the block size");
+        ensure!(
+            plaintext.len() % BLOCK_SIZE == 0,
+            "Not a multiple of the block size"
+        );
         ensure!(iv.len() >= BLOCK_SIZE, "IV is not long enough");
 
-        let mut previous_block = Vec::from(&iv[iv.len()-16..]);
-        Ok(plaintext.chunks_exact(BLOCK_SIZE).flat_map(|pt_block| 
-            {
+        let mut previous_block = Vec::from(&iv[iv.len() - 16..]);
+        Ok(plaintext
+            .chunks_exact(BLOCK_SIZE)
+            .flat_map(|pt_block| {
                 let ct_block = self.encrypt_block(&xor(&previous_block, pt_block));
                 previous_block.copy_from_slice(&ct_block);
                 ct_block
-            }).collect())
+            })
+            .collect())
     }
 
-
     pub fn decrypt_cbc(&self, iv: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
-        ensure!(plaintext.len() % BLOCK_SIZE == 0, "Not a multiple of the block size");
+        ensure!(
+            plaintext.len() % BLOCK_SIZE == 0,
+            "Not a multiple of the block size"
+        );
         ensure!(iv.len() >= BLOCK_SIZE, "IV is not long enough");
 
-        let mut previous_block = Vec::from(&iv[iv.len()-16..]);
-        Ok(plaintext.chunks_exact(BLOCK_SIZE).flat_map(|ct_block| 
-            {
+        let mut previous_block = Vec::from(&iv[iv.len() - 16..]);
+        Ok(plaintext
+            .chunks_exact(BLOCK_SIZE)
+            .flat_map(|ct_block| {
                 let pt_block = xor(&self.decrypt_block(ct_block), &previous_block);
                 previous_block.copy_from_slice(&ct_block);
                 pt_block
-            }).collect())
+            })
+            .collect())
+    }
+
+    pub fn encrypt_ecb(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
+        ensure!(
+            plaintext.len() % BLOCK_SIZE == 0,
+            "Not a multiple of the block size"
+        );
+        Ok(plaintext
+            .chunks_exact(16)
+            .flat_map(|block| self.encrypt_block(block))
+            .collect())
+    }
+
+    pub fn decrypt_ecb(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
+        ensure!(
+            ciphertext.len() % BLOCK_SIZE == 0,
+            "Not a multiple of the block size"
+        );
+        Ok(ciphertext
+            .chunks_exact(16)
+            .flat_map(|block| self.decrypt_block(block))
+            .collect())
     }
 
     pub fn encrypt_block(&self, block: &[u8]) -> Vec<u8> {
@@ -131,11 +162,11 @@ impl AesKey {
         let round_keys = self.round_keys;
 
         // Initial round key addition
-        for (idx, b) in result.iter_mut().enumerate() {
-            *b ^= round_keys[0][idx];
+        for (b, k) in result.iter_mut().zip(round_keys[0].iter()) {
+            *b ^= k;
         }
         // Internal rounds
-        for round in 1..self.rounds {
+        for round_key in &self.round_keys[1..self.rounds] {
             // SubBytes
             for b in result.iter_mut() {
                 *b = SBOX[*b as usize];
@@ -150,8 +181,8 @@ impl AesKey {
             }
 
             // AddRoundKey
-            for (idx, b) in result.iter_mut().enumerate() {
-                *b ^= round_keys[round][idx];
+            for (b, k) in result.iter_mut().zip(round_key.iter()) {
+                *b ^= k;
             }
         }
 
@@ -164,8 +195,8 @@ impl AesKey {
         shift_rows(&mut result);
 
         // AddRoundKey
-        for (idx, b) in result.iter_mut().enumerate() {
-            *b ^= round_keys[self.rounds][idx];
+        for (b, k) in result.iter_mut().zip(round_keys[self.rounds].iter()) {
+            *b ^= k;
         }
         result
     }
@@ -177,8 +208,8 @@ impl AesKey {
 
         // Final round
         // AddRoundKey
-        for (idx, b) in result.iter_mut().enumerate() {
-            *b ^= round_keys[self.rounds][idx];
+        for (b, k) in result.iter_mut().zip(round_keys[self.rounds].iter()) {
+            *b ^= k;
         }
 
         // ShiftRows
@@ -190,10 +221,10 @@ impl AesKey {
         }
 
         // Internal rounds
-        for round in (1..self.rounds).rev() {
+        for round_key in self.round_keys[1..self.rounds].iter().rev() {
             // AddRoundKey
-            for (idx, b) in result.iter_mut().enumerate() {
-                *b ^= round_keys[round][idx];
+            for (b, k) in result.iter_mut().zip(round_key.iter()) {
+                *b ^= k;
             }
 
             // MixColumns
@@ -212,8 +243,8 @@ impl AesKey {
         }
 
         // Initial round key addition
-        for (idx, b) in result.iter_mut().enumerate() {
-            *b ^= round_keys[0][idx];
+        for (b, k) in result.iter_mut().zip(round_keys[0].iter()) {
+            *b ^= k;
         }
         result
     }
@@ -553,7 +584,7 @@ mod tests {
         for pair in &kats {
             let input = pair[0];
             let expected = pair[1];
-            let mut result = input.clone();
+            let mut result = input;
 
             mix_column(&mut result);
             assert_eq!(expected, result);
@@ -710,7 +741,7 @@ mod tests {
     #[test]
     fn shift_unshift() {
         let start = [0, 10, 20, 30, 1, 11, 21, 31, 2, 12, 22, 32, 3, 13, 23, 33];
-        let mut result = start.clone();
+        let mut result = start;
         shift_rows(&mut result);
         println!("Mix: {:?}", result);
         inv_shift_rows(&mut result);
