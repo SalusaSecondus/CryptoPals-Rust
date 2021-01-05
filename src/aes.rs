@@ -166,6 +166,28 @@ impl AesKey {
             .collect())
     }
 
+    pub fn ctr(&self, nonce: &[u8], data: &[u8]) -> Vec<u8> {
+        let mut counter = Vec::from(nonce);
+        counter.resize(BLOCK_SIZE, 0u8);
+        data.chunks(16)
+            .flat_map(|block| {
+                println!("CTR: {}", hex::encode(&counter));
+                let stream = self.encrypt_block(&counter);
+                let block = xor(block, &stream);
+                AesKey::increment_counter(&mut counter);
+                block
+            })
+            .collect()
+    }
+
+    fn increment_counter(counter: &mut [u8]) {
+        for b in counter.iter_mut().skip(8) {
+            *b = b.wrapping_add(1);
+            if *b != 0 {
+                break;
+            }
+        }
+    }
     pub fn encrypt_block(&self, block: &[u8]) -> Vec<u8> {
         let mut result = Vec::from(block);
 
@@ -758,5 +780,22 @@ mod tests {
         println!("Mix: {:?}", result);
 
         assert_eq!(start, result);
+    }
+
+    #[test]
+    fn ctr_test() -> Result<()> {
+        let key = AesKey::new(b"YELLOW SUBMARINE")?;
+        let ciphertext = base64::decode(
+            "L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ==",
+        )?;
+        let plaintext = key.ctr(&[], &ciphertext);
+        println!("FOO: {}", hex::encode(&plaintext));
+        let plaintext = String::from_utf8(plaintext)?;
+        println!("Challenge 18: {}", plaintext);
+        assert_eq!(
+            "Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby ",
+            &plaintext
+        );
+        Ok(())
     }
 }
