@@ -377,7 +377,7 @@ mod tests {
 
         use crate::{aes::AesKey, oracles, padding::Padding};
         use anyhow::Result;
-        use oracles::Challenge13Oracle;
+        use oracles::Set2Oracle;
 
         #[test]
         #[ignore]
@@ -419,14 +419,14 @@ mod tests {
         #[test]
         #[ignore]
         fn challenge_12() -> Result<()> {
-            let oracle = oracles::Challenge12Oracle::new();
+            let oracle = oracles::Set2Oracle::new();
             // Determine block size
-            let ct_len = oracle.encrypt(&[])?.len();
+            let ct_len = oracle.encrypt12(&[])?.len();
             let mut block_size = 0;
             {
                 let mut pt = vec![];
                 for _len in 0..40 {
-                    let new_len = oracle.encrypt(&pt)?.len();
+                    let new_len = oracle.encrypt12(&pt)?.len();
                     if new_len != ct_len {
                         block_size = new_len - ct_len;
                         break;
@@ -458,7 +458,7 @@ mod tests {
                         challenge[15] = guess;
                         // println!("Challenge: {}", hex::encode(&challenge));
 
-                        let ct = oracle.encrypt(&challenge)?;
+                        let ct = oracle.encrypt12(&challenge)?;
                         let guess_block = &ct[0..block_size];
                         let target_block =
                             &ct[offset + block_size..offset + block_size + block_size];
@@ -483,22 +483,24 @@ mod tests {
 
         #[test]
         fn challenge_13() -> Result<()> {
-            let oracle = Challenge13Oracle::new();
-            let role_block = oracle.profile_for(&"__________admin")?;
-            let role_block = role_block.chunks_exact(16).next().unwrap();
+            let oracle = Set2Oracle::new();
+            let role_block = oracle.profile_for_13(&"__________admin")?;
 
-            let padding_block = oracle.profile_for(&"____admin")?;
+            let role_block = role_block.chunks_exact(16).nth(1).unwrap();
+
+            let padding_block = oracle.profile_for_13(&"f")?;
             let padding_block = padding_block.chunks_exact(16).last().unwrap();
 
-            let victim = oracle.profile_for(&"gr@sample.com")?;
+            let victim = oracle.profile_for_13(&"gr@sample.com")?;
 
             let mut attack = vec![];
             attack.extend_from_slice(&victim[0..32]);
             attack.extend_from_slice(role_block);
             attack.extend_from_slice(padding_block);
 
-            assert!(oracle.is_admin(&attack));
-            assert_eq!("admin", oracle.get_role(&attack)?);
+
+            assert_eq!("admin", oracle.get_role_13(&attack)?);
+            assert!(oracle.is_admin_13(&attack));
 
             Ok(())
         }
@@ -506,7 +508,7 @@ mod tests {
         #[test]
         #[ignore]
         fn challenge_14() -> Result<()> {
-            let oracle = oracles::Challenge12Oracle::new();
+            let oracle = oracles::Set2Oracle::new();
             // Determine block size
             let bare_ct = oracle.encrypt14(&[])?;
             let ct_len = bare_ct.len();
