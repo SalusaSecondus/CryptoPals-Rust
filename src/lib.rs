@@ -500,7 +500,6 @@ mod tests {
             attack.extend_from_slice(role_block);
             attack.extend_from_slice(padding_block);
 
-
             assert_eq!("admin", oracle.get_role_13(&attack)?);
             assert!(oracle.is_admin_13(&attack));
 
@@ -623,8 +622,7 @@ mod tests {
         }
         let parsed = oracle.get_fields_16(&ciphertext)?;
         assert_eq!("true", parsed.get("admin").unwrap());
-        
+
         Ok(())
     }
-
 }

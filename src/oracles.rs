@@ -64,7 +64,11 @@ impl Set2Oracle {
         let mut prefix = vec![];
         prefix.resize_with(prefix_range.sample(&mut OsRng), || OsRng.gen());
 
-        Set2Oracle { key, prefix, rng: RefCell::new(OsRng) }
+        Set2Oracle {
+            key,
+            prefix,
+            rng: RefCell::new(OsRng),
+        }
     }
 
     pub fn encrypt12(&self, prefix: &[u8]) -> Result<Vec<u8>> {
@@ -123,7 +127,7 @@ impl Set2Oracle {
 
         self.key.encrypt_ecb(&Padding::Pkcs7Padding(16).pad(&pt)?)
     }
-    
+
     fn parse_kv(s: &str, pair_delimiter: char) -> Result<HashMap<String, String>> {
         let mut result = HashMap::new();
         for pairs in s.split(pair_delimiter) {
@@ -137,8 +141,14 @@ impl Set2Oracle {
     }
 
     pub fn encrypt_16(&self, user_data: &str) -> Result<Vec<u8>> {
-        ensure!(!user_data.contains(';'), "user_data contains invalid character");
-        ensure!(!user_data.contains('='), "user_data contains invalid character");
+        ensure!(
+            !user_data.contains(';'),
+            "user_data contains invalid character"
+        );
+        ensure!(
+            !user_data.contains('='),
+            "user_data contains invalid character"
+        );
         let mut plaintext = Vec::from(&b"comment1=cooking%20MCs;userdata="[..]);
         plaintext.extend_from_slice(&user_data.as_bytes());
         plaintext.extend_from_slice(b";comment2=%20like%20a%20pound%20of%20bacon");
