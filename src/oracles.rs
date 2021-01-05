@@ -50,6 +50,7 @@ impl Challenge11Oracle {
 
 pub struct Challenge12Oracle {
     key: AesKey,
+    pub prefix: Vec<u8>,
 }
 
 impl Challenge12Oracle {
@@ -57,7 +58,12 @@ impl Challenge12Oracle {
         let mut raw_key = [0u8; 16];
         OsRng.fill_bytes(&mut raw_key);
         let key = AesKey::new(&raw_key).unwrap();
-        Challenge12Oracle { key }
+
+        let prefix_range = Uniform::new_inclusive(5, 10);
+        let mut prefix = vec![];
+        prefix.resize_with(prefix_range.sample(&mut OsRng), || OsRng.gen());
+
+        Challenge12Oracle { key, prefix }
     }
 
     pub fn encrypt(&self, prefix: &[u8]) -> Result<Vec<u8>> {
@@ -66,6 +72,19 @@ impl Challenge12Oracle {
         }
 
         let mut plaintext = Vec::from(prefix);
+        plaintext.extend(HIDDEN_PT.iter());
+
+        let padded = Padding::Pkcs7Padding(16).pad(&plaintext)?;
+        Ok(self.key.encrypt_ecb(&padded)?)
+    }
+
+    pub fn encrypt14(&self, attacker_controlled: &[u8]) -> Result<Vec<u8>> {
+        lazy_static! {
+            static ref HIDDEN_PT: Vec<u8> = base64::decode("Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK").unwrap();
+        }
+
+        let mut plaintext = self.prefix.clone();
+        plaintext.extend(attacker_controlled);
         plaintext.extend(HIDDEN_PT.iter());
 
         let padded = Padding::Pkcs7Padding(16).pad(&plaintext)?;
@@ -87,11 +106,11 @@ impl Challenge13Oracle {
 
     fn parse_kv(s: &str) -> Result<HashMap<String, String>> {
         let mut result = HashMap::new();
-        for pairs in s.split('&')  {
-            let mut parts = pairs.splitn(2,'=');
+        for pairs in s.split('&') {
+            let mut parts = pairs.splitn(2, '=');
             let key = parts.next().context("Missing key")?;
             let value = parts.next().context("Missing value")?;
-            
+
             result.insert(key.to_owned(), value.to_owned());
         }
         Ok(result)
@@ -99,18 +118,19 @@ impl Challenge13Oracle {
 
     pub fn is_admin(&self, ciphertext: &[u8]) -> bool {
         let invalid_str = String::from("invalid");
-        self.key.decrypt_ecb(ciphertext)
+        self.key
+            .decrypt_ecb(ciphertext)
             .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt))
             .and_then(|pt| String::from_utf8(pt).context("Bad UTF8"))
             .and_then(|pt| Challenge13Oracle::parse_kv(&pt))
             .map(|m| m.get("role").unwrap_or(&invalid_str) == "admin")
             .unwrap_or(false)
-        
     }
 
     pub fn get_role(&self, ciphertext: &[u8]) -> Result<String> {
         let invalid_str = String::from("invalid");
-        self.key.decrypt_ecb(ciphertext)
+        self.key
+            .decrypt_ecb(ciphertext)
             .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt))
             .and_then(|pt| String::from_utf8(pt).context("Bad UTF8"))
             .and_then(|pt| Challenge13Oracle::parse_kv(&pt))
@@ -131,8 +151,8 @@ impl Challenge13Oracle {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
     use super::Challenge13Oracle;
+    use anyhow::Result;
 
     #[test]
     fn chall13_smoke() -> Result<()> {
@@ -143,5 +163,4 @@ mod tests {
 
         Ok(())
     }
-
 }

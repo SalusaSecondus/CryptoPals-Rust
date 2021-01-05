@@ -208,6 +208,19 @@ pub fn monogram_score(bin: &[u8]) -> f64 {
     result
 }
 
+fn find_difference(a: &[u8], b: &[u8]) -> Option<usize> {
+    a.iter()
+        .zip(b.iter())
+        .enumerate()
+        .find_map(|(idx, (ai, bi))| {
+            if ai != bi {
+                Option::Some(idx)
+            } else {
+                Option::None
+            }
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,7 +421,7 @@ mod tests {
         fn challenge_12() -> Result<()> {
             let oracle = oracles::Challenge12Oracle::new();
             // Determine block size
-            let ct_len = oracle.encrypt(&vec![])?.len();
+            let ct_len = oracle.encrypt(&[])?.len();
             let mut block_size = 0;
             {
                 let mut pt = vec![];
@@ -437,7 +450,7 @@ mod tests {
                 for byte_to_guess in 1..=block_size {
                     // println!("Decrypted: {}", String::from_utf8_lossy(&decrypted));
                     let mut challenge =
-                        Vec::from(&decrypted[decrypted.len() - block_size+1..decrypted.len()]);
+                        Vec::from(&decrypted[decrypted.len() - block_size + 1..decrypted.len()]);
 
                     challenge.extend(&a_block[..(block_size - byte_to_guess + 1)]);
                     for guess in 0..=255 {
@@ -447,7 +460,8 @@ mod tests {
 
                         let ct = oracle.encrypt(&challenge)?;
                         let guess_block = &ct[0..block_size];
-                        let target_block = &ct[offset + block_size..offset + block_size+block_size];
+                        let target_block =
+                            &ct[offset + block_size..offset + block_size + block_size];
                         // println!("\tBlocks: {} {}", hex::encode(guess_block), hex::encode(target_block));
 
                         if guess_block == target_block {
@@ -486,6 +500,96 @@ mod tests {
             assert!(oracle.is_admin(&attack));
             assert_eq!("admin", oracle.get_role(&attack)?);
 
+            Ok(())
+        }
+
+        #[test]
+        #[ignore]
+        fn challenge_14() -> Result<()> {
+            let oracle = oracles::Challenge12Oracle::new();
+            // Determine block size
+            let bare_ct = oracle.encrypt14(&[])?;
+            let ct_len = bare_ct.len();
+            let mut block_size = 0;
+            {
+                let mut pt = vec![];
+                for _len in 0..40 {
+                    let new_len = oracle.encrypt14(&pt)?.len();
+                    if new_len != ct_len {
+                        block_size = new_len - ct_len;
+                        break;
+                    }
+                    pt.push(0);
+                }
+            }
+            let block_size = block_size;
+            // Skipping ECB detection because I've done it so many times.
+
+            // Figure out prefix length.
+            // We know that the first block has a random length prefix.
+            // Pad until the second and third blocks are equal, then remove the last two blocks for our constant prefix.
+            let mut constant_prefix = vec![];
+            constant_prefix.extend(std::iter::repeat(b'A').take(block_size * 2));
+            {
+                let mut sample_ct = oracle.encrypt14(&constant_prefix)?;
+                loop {
+                    // println!("{} {}", hex::encode(sample_ct[16..32]), hex::encode(sample_ct[32..48]));
+                    if sample_ct[block_size..block_size * 2]
+                        == sample_ct[block_size * 2..block_size * 3]
+                    {
+                        break;
+                    } else {
+                        constant_prefix.push(b'A');
+                        sample_ct = oracle.encrypt14(&constant_prefix)?;
+                    }
+                }
+            }
+            constant_prefix.resize(constant_prefix.len() - block_size * 2, 0);
+            let constant_prefix = constant_prefix;
+
+            // Start guessing and decrypting
+            let mut a_block = vec![];
+            a_block.extend(std::iter::repeat(b'A').take(block_size));
+            let a_block = a_block;
+
+            // We start with a dummy value just to make things easier and will remove it at the end.
+            let mut decrypted = a_block.clone();
+
+            let mut offset = block_size;
+            while offset < ct_len {
+                for byte_to_guess in 1..=block_size {
+                    // println!("Decrypted: {}", String::from_utf8_lossy(&decrypted));
+                    let mut challenge = constant_prefix.clone();
+                    challenge.extend_from_slice(
+                        &decrypted[decrypted.len() - block_size + 1..decrypted.len()],
+                    );
+
+                    challenge.extend(&a_block[..(block_size - byte_to_guess + 1)]);
+                    for guess in 0..=255 {
+                        // println!("Guess: {} {} {}", offset, byte_to_guess, guess);
+                        challenge[constant_prefix.len() + block_size - 1] = guess;
+                        // println!("Challenge: {}", hex::encode(&challenge));
+
+                        let ct = oracle.encrypt14(&challenge)?;
+                        let guess_block = &ct[block_size..block_size * 2];
+                        let target_block =
+                            &ct[offset + block_size..offset + block_size + block_size];
+                        // println!("\tBlocks: {} {}", hex::encode(guess_block), hex::encode(target_block));
+
+                        if guess_block == target_block {
+                            decrypted.push(guess);
+                            // println!("Found! {}", guess);
+                            break;
+                        }
+                    }
+                }
+                offset += block_size;
+            }
+
+            println!(
+                "Challenge 14:\n{}",
+                String::from_utf8_lossy(&decrypted[block_size..decrypted.len()])
+            );
             Ok(())
         }
     }
