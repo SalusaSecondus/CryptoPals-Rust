@@ -592,5 +592,20 @@ mod tests {
             );
             Ok(())
         }
+
+        #[test]
+        fn challenge_15() -> Result<()> {
+            let padding = Padding::Pkcs7Padding(16);
+            assert_eq!(
+                &b"ICE ICE BABY"[..],
+                padding
+                    .unpad(&b"ICE ICE BABY\x04\x04\x04\x04"[..])?
+                    .as_slice()
+            );
+
+            assert!(padding.unpad(&b"ICE ICE BABY\x05\x05\x05\x05"[..]).is_err());
+            assert!(padding.unpad(&b"ICE ICE BABY\x01\x02\x03\x04"[..]).is_err());
+            Ok(())
+        }
     }
 }
