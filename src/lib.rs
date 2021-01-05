@@ -223,6 +223,8 @@ fn find_difference(a: &[u8], b: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    use oracles::Set2Oracle;
+
     use super::*;
 
     #[test]
@@ -610,4 +612,19 @@ mod tests {
             Ok(())
         }
     }
+
+    #[test]
+    fn challenge_16() -> Result<()> {
+        let oracle = Set2Oracle::new();
+        let target = b"A;admin=true;a=b";
+        let mut ciphertext = oracle.encrypt_16("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")?;
+        for (b, m) in ciphertext[48..64].iter_mut().zip(target.iter()) {
+            *b ^= m ^ b'A';
+        }
+        let parsed = oracle.get_fields_16(&ciphertext)?;
+        assert_eq!("true", parsed.get("admin").unwrap());
+        
+        Ok(())
+    }
+
 }

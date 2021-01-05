@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use anyhow::{ensure, Context, Result};
 use lazy_static::lazy_static;
@@ -50,7 +50,8 @@ impl Challenge11Oracle {
 
 pub struct Set2Oracle {
     key: AesKey,
-    pub prefix: Vec<u8>,
+    prefix: Vec<u8>,
+    rng: RefCell<OsRng>,
 }
 
 impl Set2Oracle {
@@ -63,7 +64,7 @@ impl Set2Oracle {
         let mut prefix = vec![];
         prefix.resize_with(prefix_range.sample(&mut OsRng), || OsRng.gen());
 
-        Set2Oracle { key, prefix }
+        Set2Oracle { key, prefix, rng: RefCell::new(OsRng) }
     }
 
     pub fn encrypt12(&self, prefix: &[u8]) -> Result<Vec<u8>> {
@@ -97,7 +98,7 @@ impl Set2Oracle {
             .decrypt_ecb(ciphertext)
             .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt))
             .and_then(|pt| String::from_utf8(pt).context("Bad UTF8"))
-            .and_then(|pt| Set2Oracle::parse_kv(&pt))
+            .and_then(|pt| Set2Oracle::parse_kv(&pt, '&'))
             .map(|m| m.get("role").unwrap_or(&invalid_str) == "admin")
             .unwrap_or(false)
     }
@@ -108,7 +109,7 @@ impl Set2Oracle {
             .decrypt_ecb(ciphertext)
             .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt))
             .and_then(|pt| String::from_utf8(pt).context("Bad UTF8"))
-            .and_then(|pt| Set2Oracle::parse_kv(&pt))
+            .and_then(|pt| Set2Oracle::parse_kv(&pt, '&'))
             .map(|m| m.get("role").unwrap_or(&invalid_str).to_owned())
     }
 
@@ -122,11 +123,10 @@ impl Set2Oracle {
 
         self.key.encrypt_ecb(&Padding::Pkcs7Padding(16).pad(&pt)?)
     }
-
     
-    fn parse_kv(s: &str) -> Result<HashMap<String, String>> {
+    fn parse_kv(s: &str, pair_delimiter: char) -> Result<HashMap<String, String>> {
         let mut result = HashMap::new();
-        for pairs in s.split('&') {
+        for pairs in s.split(pair_delimiter) {
             let mut parts = pairs.splitn(2, '=');
             let key = parts.next().context("Missing key")?;
             let value = parts.next().context("Missing value")?;
@@ -134,6 +134,31 @@ impl Set2Oracle {
             result.insert(key.to_owned(), value.to_owned());
         }
         Ok(result)
+    }
+
+    pub fn encrypt_16(&self, user_data: &str) -> Result<Vec<u8>> {
+        ensure!(!user_data.contains(';'), "user_data contains invalid character");
+        ensure!(!user_data.contains('='), "user_data contains invalid character");
+        let mut plaintext = Vec::from(&b"comment1=cooking%20MCs;userdata="[..]);
+        plaintext.extend_from_slice(&user_data.as_bytes());
+        plaintext.extend_from_slice(b";comment2=%20like%20a%20pound%20of%20bacon");
+
+        plaintext = Padding::Pkcs7Padding(16).pad(&plaintext)?;
+
+        let mut iv = vec![];
+        iv.resize_with(16, || self.rng.borrow_mut().gen());
+        let ciphertext = self.key.encrypt_cbc(&iv, &plaintext)?;
+        iv.extend(ciphertext.iter());
+
+        Ok(iv)
+    }
+
+    pub fn get_fields_16(&self, ciphertext: &[u8]) -> Result<HashMap<String, String>> {
+        self.key
+            .decrypt_cbc(&ciphertext[..16], &ciphertext[16..])
+            .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt))
+            .map(|pt| String::from_utf8_lossy(&pt).to_string())
+            .and_then(|pt| Set2Oracle::parse_kv(&pt, ';'))
     }
 }
 
