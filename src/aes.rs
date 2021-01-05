@@ -2,6 +2,8 @@ use crate::xor;
 use anyhow::{bail, ensure, Result};
 use core::fmt::Display;
 use lazy_static::lazy_static;
+use rand::RngCore;
+use rand_core::OsRng;
 use std::str::FromStr;
 
 const BLOCK_SIZE: usize = 16;
@@ -60,6 +62,14 @@ pub struct AesKey {
 }
 
 impl AesKey {
+    pub fn rand_key(key_len: u8) -> Result<AesKey> {
+        ensure!(key_len == 128, "Only 128 bit keys are currently supported");
+
+        let mut raw_key = [0u8; 16];
+        OsRng.fill_bytes(&mut raw_key);
+        AesKey::new(&raw_key)
+    }
+
     #[allow(non_snake_case)]
     pub fn new(bin: &[u8]) -> Result<AesKey> {
         ensure!(bin.len() == 16, "Only AES-128 is currently supported");

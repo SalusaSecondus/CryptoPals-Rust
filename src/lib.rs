@@ -221,6 +221,34 @@ fn find_difference(a: &[u8], b: &[u8]) -> Option<usize> {
         })
 }
 
+fn decrypt_with_pkcs7_padding_oracle<F>(oracle: F, old_iv: &[u8], block: &[u8]) -> Vec<u8>
+where
+    F: Fn(&[u8], &[u8]) -> bool,
+{
+    let mut iv = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let mut result = iv.clone();
+
+    for pad_len in 1..=16 {
+        for idx in 1..pad_len {
+            iv[16 - idx] = result[16 - idx] ^ (pad_len as u8);
+        }
+        // println!("Result: {}\nIV: {}", hex::encode(&result), hex::encode(&iv));
+
+        for guess in 0u8..=255 {
+            iv[16 - pad_len] = guess ^ (pad_len as u8);
+            if oracle(&iv, block) {
+                // println!("Guessed: {}", guess);
+                result[16 - pad_len] = guess;
+                break;
+            }
+        }
+    }
+    xor(&result, old_iv)
+    // println!("Result: {}\nIV: {}", hex::encode(&result), hex::encode(&iv));
+    // // todo!();
+    // result
+}
+
 #[cfg(test)]
 mod tests {
     use oracles::Set2Oracle;
@@ -624,5 +652,38 @@ mod tests {
         assert_eq!("true", parsed.get("admin").unwrap());
 
         Ok(())
+    }
+
+    mod set3 {
+        use crate::{
+            decrypt_with_pkcs7_padding_oracle, oracles::Challenge17Oracle, padding::Padding,
+        };
+        use anyhow::Result;
+
+        #[test]
+        fn challenge_17() -> Result<()> {
+            let oracle = Challenge17Oracle::new();
+
+            let shim = |iv: &[u8], block: &[u8]| -> bool {
+                let mut merged = Vec::from(iv);
+                merged.extend_from_slice(block);
+                oracle.is_valid(&merged)
+            };
+
+            let mut result: Vec<u8> = vec![];
+            let mut last_chunk: Option<Vec<u8>> = Option::None;
+            for chunk in oracle.ciphertext.chunks_exact(16) {
+                if let Some(old_iv) = last_chunk {
+                    let block = decrypt_with_pkcs7_padding_oracle(shim, &old_iv, chunk);
+
+                    result.extend(block.iter());
+                }
+                last_chunk = Option::Some(chunk.to_owned());
+            }
+            println!("Challenge 17: {}", String::from_utf8_lossy(&result));
+            let result = Padding::Pkcs7Padding(16).unpad(&result)?;
+            oracle.assert_success(&String::from_utf8(result)?);
+            Ok(())
+        }
     }
 }

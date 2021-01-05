@@ -172,6 +172,58 @@ impl Set2Oracle {
     }
 }
 
+pub struct Challenge17Oracle {
+    key: AesKey,
+    plaintext: String,
+    pub ciphertext: Vec<u8>,
+}
+
+impl Challenge17Oracle {
+    pub fn new() -> Challenge17Oracle {
+        let plaintexts = [
+            "MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=",
+            "MDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=",
+            "MDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==",
+            "MDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg==",
+            "MDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl",
+            "MDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA==",
+            "MDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw==",
+            "MDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8=",
+            "MDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=",
+            "MDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93",
+        ];
+        let mut rng = OsRng;
+        let idx = rng.gen_range(0..plaintexts.len());
+        let plaintext = base64::decode(plaintexts[idx].to_owned()).unwrap();
+        let padded_plaintext = Padding::Pkcs7Padding(16).pad(&plaintext).unwrap();
+        let plaintext = String::from_utf8(plaintext).unwrap();
+
+        let key = AesKey::rand_key(128).unwrap();
+        let mut iv = vec![];
+        iv.resize_with(16, || OsRng.gen());
+        let ciphertext = key.encrypt_cbc(&iv, &padded_plaintext).unwrap();
+        iv.extend(ciphertext.iter());
+        let ciphertext = iv;
+
+        Challenge17Oracle {
+            key,
+            plaintext,
+            ciphertext,
+        }
+    }
+
+    pub fn is_valid(&self, challenge: &[u8]) -> bool {
+        let tmp = self.key.decrypt_cbc(&challenge[..16], &challenge[16..]);
+        // println!("TMP: {:?}", tmp);
+        let tmp = tmp.and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt));
+        tmp.is_ok()
+    }
+
+    pub fn assert_success(&self, challenge: &str) {
+        assert_eq!(self.plaintext, challenge);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Set2Oracle;
