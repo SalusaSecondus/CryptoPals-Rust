@@ -12,6 +12,7 @@ use std::{
 mod aes;
 mod oracles;
 mod padding;
+mod prng;
 
 fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
     a.iter().zip(b.iter().cycle()).map(|(a, b)| a ^ b).collect()
