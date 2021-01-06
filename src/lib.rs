@@ -6,7 +6,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader, Lines},
-    vec,
+    usize, vec,
 };
 
 mod aes;
@@ -64,17 +64,33 @@ fn find_best_multi_xor(bin: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
             key_length = possible_length;
         }
     }
-    let key_length = key_length;
     let chunks = parallel_chunk(bin, key_length);
+    let key = find_best_multi_xor_with_chunks(&chunks)?;
+    let plaintext = xor(bin, &key);
+    Ok((plaintext, key))
+}
 
+fn find_best_multi_xor_with_chunks(chunks: &[Vec<u8>]) -> Result<Vec<u8>> {
     let mut key = vec![];
     for c in chunks {
         key.push(find_best_single_xor(&c)?.1);
     }
+    Ok(key)
+}
 
-    let plaintext = xor(bin, &key);
+fn transpose(input: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    let width = input.iter().map(|ct| ct.len()).max().unwrap();
+    let mut result = vec![];
+    for _ in 0..width {
+        result.push(vec![]);
+    }
 
-    Ok((plaintext, key))
+    for entry in input {
+        for (idx, b) in entry.iter().enumerate() {
+            result[idx % width].push(*b);
+        }
+    }
+    result
 }
 
 fn parallel_chunk(input: &[u8], width: usize) -> Vec<Vec<u8>> {
@@ -170,15 +186,16 @@ pub fn monogram_score(bin: &[u8]) -> f64 {
     };
     let mut counts: HashMap<u8, f64> = HashMap::new();
     let total = bin.len() as f64;
+    let mut result = 0.0;
     for b in bin {
         if b > &127 {
-            return 100.0;
+            result += 100.0;
         }
         if b <= &8 || (b >= &11 && b <= &31) {
-            return 100.0;
+            result += 100.0;
         }
         if !b.is_ascii() {
-            return 100.0;
+            result += 100.0;
         }
         let mut b = b.to_ascii_lowercase();
         if !FREQ.contains_key(&b) {
@@ -187,7 +204,6 @@ pub fn monogram_score(bin: &[u8]) -> f64 {
         *counts.entry(b).or_insert(0.0) += &1.0;
     }
 
-    let mut result = 0.0;
     for k in FREQ.keys() {
         let found = counts.get(&k).unwrap_or(&0.0) / total;
         let expected = FREQ.get(&k).unwrap();
@@ -656,7 +672,10 @@ mod tests {
 
     mod set3 {
         use crate::{
-            decrypt_with_pkcs7_padding_oracle, oracles::Challenge17Oracle, padding::Padding,
+            decrypt_with_pkcs7_padding_oracle, find_best_multi_xor_with_chunks,
+            oracles::{Challenge17Oracle, Challenge19Oracle},
+            padding::Padding,
+            transpose,
         };
         use anyhow::Result;
 
@@ -683,6 +702,22 @@ mod tests {
             println!("Challenge 17: {}", String::from_utf8_lossy(&result));
             let result = Padding::Pkcs7Padding(16).unpad(&result)?;
             oracle.assert_success(&String::from_utf8(result)?);
+            Ok(())
+        }
+
+        #[test]
+        fn challenge_19() -> Result<()> {
+            let oracle = Challenge19Oracle::new();
+            let max_len = oracle.ciphertexts.iter().map(|ct| ct.len()).max().unwrap();
+
+            println!("Max len: {}", max_len);
+            let merged = transpose(&oracle.ciphertexts);
+
+            let key = find_best_multi_xor_with_chunks(&merged)?;
+            for ct in oracle.ciphertexts {
+                let pt = crate::xor(&ct, &key);
+                println!("Challenge 19: {}", String::from_utf8_lossy(&pt));
+            }
             Ok(())
         }
     }

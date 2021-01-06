@@ -171,7 +171,6 @@ impl AesKey {
         counter.resize(BLOCK_SIZE, 0u8);
         data.chunks(16)
             .flat_map(|block| {
-                println!("CTR: {}", hex::encode(&counter));
                 let stream = self.encrypt_block(&counter);
                 let block = xor(block, &stream);
                 AesKey::increment_counter(&mut counter);
