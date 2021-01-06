@@ -708,9 +708,7 @@ mod tests {
         #[test]
         fn challenge_19() -> Result<()> {
             let oracle = Challenge19Oracle::new();
-            let max_len = oracle.ciphertexts.iter().map(|ct| ct.len()).max().unwrap();
 
-            println!("Max len: {}", max_len);
             let merged = transpose(&oracle.ciphertexts);
 
             let key = find_best_multi_xor_with_chunks(&merged)?;
@@ -718,6 +716,25 @@ mod tests {
                 let pt = crate::xor(&ct, &key);
                 println!("Challenge 19: {}", String::from_utf8_lossy(&pt));
             }
+            Ok(())
+        }
+
+        #[test]
+        fn challenge_20() -> Result<()> {
+            let mut ciphertexts = vec![];
+            for line in crate::read_file("20.txt")? {
+                let line = line?;
+                ciphertexts.push(base64::decode(&line)?);
+            }
+            let ciphertexts = ciphertexts;
+            let transposed = transpose(&ciphertexts);
+            let key = find_best_multi_xor_with_chunks(&transposed)?;
+
+            for ct in ciphertexts {
+                let pt = crate::xor(&ct, &key);
+                println!("Challenge 20: {}", String::from_utf8_lossy(&pt));
+            }
+
             Ok(())
         }
     }
