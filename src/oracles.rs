@@ -5,8 +5,10 @@ use lazy_static::lazy_static;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
+use time::{SystemTime, UNIX_EPOCH};
+use std::{thread, time};
 
-use crate::aes::AesKey;
+use crate::{aes::AesKey, prng::MT19937};
 use crate::padding::Padding;
 
 pub struct Challenge11Oracle();
@@ -291,6 +293,31 @@ impl Challenge19Oracle {
             plaintexts,
             ciphertexts,
         }
+    }
+}
+
+pub struct Challenge22Oracle {
+    seed: u32,
+    pub clue: u32,
+}
+
+impl Challenge22Oracle {
+    pub fn new() -> Challenge22Oracle {
+        let sleep1 = time::Duration::from_secs(OsRng.gen_range(40..500));
+        let sleep2 = time::Duration::from_secs(OsRng.gen_range(40..500));
+
+        thread::sleep(sleep1);
+        let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+        thread::sleep(sleep2);
+
+        let mut rng = MT19937::new(seed);
+        let clue = rng.next_u32();
+
+        Challenge22Oracle { seed, clue }
+    }
+
+    pub fn assert_success(&self, guess: u32) {
+        assert_eq!(self.seed, guess);
     }
 }
 

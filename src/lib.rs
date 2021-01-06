@@ -672,13 +672,11 @@ mod tests {
     }
 
     mod set3 {
-        use crate::{
-            decrypt_with_pkcs7_padding_oracle, find_best_multi_xor_with_chunks,
-            oracles::{Challenge17Oracle, Challenge19Oracle},
-            padding::Padding,
-            transpose,
-        };
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        use crate::{decrypt_with_pkcs7_padding_oracle, find_best_multi_xor_with_chunks, oracles::{Challenge17Oracle, Challenge19Oracle, Challenge22Oracle}, padding::Padding, prng::MT19937, transpose};
         use anyhow::Result;
+        use rand::RngCore;
 
         #[test]
         fn challenge_17() -> Result<()> {
@@ -737,6 +735,25 @@ mod tests {
             }
 
             Ok(())
+        }
+
+        #[test]
+        #[ignore = "slow"]
+        fn challenge_22() -> Result<()> {
+            let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            let oracle = Challenge22Oracle::new();
+            let end_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            println!("Challenge 22. Starting guess");
+            
+            for seed in start_time..end_time {
+                let mut rng = MT19937::new(seed);
+                if rng.next_u32() == oracle.clue {
+                    oracle.assert_success(seed);
+                    println!("Challenge 22. Guessed seed: {}", seed);
+                    return Ok(());
+                }
+            }
+            panic!("No seed found");
         }
     }
 }
