@@ -759,27 +759,11 @@ mod tests {
 
         #[test]
         fn challenge_23() -> Result<()> {
-            let mut y = 123u32;
-            println!("y:  {}", y);
-
-            y ^= y >> 11;
-            println!("y:  {}", y);
-
-            y ^= (y << 7) & 0x9D2C5680;
-            println!("y:  {}", y);
-
-            y ^= (y << 15) & 0xEFC60000;
-            println!("y:  {}", y);
-            y ^= y >> 18;
-            println!("y:  {}", y);
-            println!();
-            assert_eq!(mt19937_untemper(y), 123);
-
             let mut target = MT19937::new(OsRng.next_u32());
 
             let mut state = vec![];
             for _ in 0..624 {
-                state.push(mt19937_untemper(target.next_u32()));
+                state.push(MT19937::untemper(target.next_u32()));
             }
 
             let mut cloned = MT19937::from_state(&state, 624)?;
@@ -789,21 +773,6 @@ mod tests {
             }
 
             Ok(())
-        }
-
-        fn mt19937_untemper(y: u32) -> u32 {
-            let mut y = y;
-            println!("y': {}", y);
-
-            y ^= y >> 18;
-            println!("y': {}", y);
-            y ^= (y << 15) & 0xEFC60000;
-            println!("y': {}", y);
-            y ^= (y << 7) & 0x9D2C5680;
-            println!("y': {}", y);
-            y ^= y >> 11;
-            println!("y': {}", y);
-            y
         }
     }
 }

@@ -45,6 +45,58 @@ impl MT19937 {
         Ok(MT19937 { state: state.to_owned(), index })
     }
 
+    pub fn untemper(val: u32) -> u32 {
+        let val = MT19937::undo_18_shift(val);
+        let val = MT19937::undo_15_shift(val);
+        let val = MT19937::undo_7_shift(val);
+        let val = MT19937::undo_11_shift(val);
+        val
+    }
+    fn undo_18_shift(y: u32) -> u32 {
+        y ^ (y >> 18)
+    }
+
+    fn undo_11_shift(y: u32) -> u32 {
+        let high_1: u32 = 0xffe00000;
+        let mut y = y;
+
+        y ^= (y & high_1) >> 11;
+        y ^= (y & (high_1 >> 11 )) >> 11;
+        y
+    }
+
+    fn undo_15_shift(val: u32) -> u32 {
+        let low_15 = 0x7fffu32;
+        let mask = 0xefc60000u32;
+        let mut val = val;
+    
+        // Bottom 15 bits are correct
+        val ^= ((val & low_15) << 15) & mask;
+        // Bottom 30 bits are correct
+        val ^= ((val & (low_15 << 15)) << 15) & mask;
+        val
+    }
+
+    fn undo_7_shift(val: u32) -> u32 {
+        let mut val = val;
+        let low_7 = 0x7fu32;
+        let mask = 0x9d2c5680u32;
+        
+        // There has _got_ to be a way to do this
+        // in a single operation, but I just can't
+        // think of it right now
+        
+        // Bottom 7 bits are correct
+        val ^= ((val & low_7) << 7) & mask;
+        // Bottom 14 bits are correct
+        val ^= ((val & (low_7 << 7)) << 7) & mask;
+        // Bottom 21 bits are correct
+        val ^= ((val & (low_7 << 14)) << 7) & mask;
+        // Bottom 28 bits are correct
+        val ^= ((val & (low_7 << 21)) << 7) & mask;
+        // Everything is correct
+        val
+    }
     fn extract_number(&mut self) -> u32 {
         if self.index >= N {
             self.twist();
