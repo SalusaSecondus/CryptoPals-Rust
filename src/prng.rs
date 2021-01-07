@@ -1,3 +1,4 @@
+use anyhow::{ensure, Result};
 use rand_core::{impls, RngCore};
 
 const W: u32 = 32;
@@ -35,6 +36,13 @@ impl MT19937 {
         }
 
         MT19937 { state, index }
+    }
+
+    pub fn from_state(state: &[u32], index: usize) -> Result<MT19937> {
+        ensure!(state.len() == N);
+        ensure!(index <= N);
+
+        Ok(MT19937 { state: state.to_owned(), index })
     }
 
     fn extract_number(&mut self) -> u32 {

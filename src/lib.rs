@@ -677,6 +677,7 @@ mod tests {
         use crate::{decrypt_with_pkcs7_padding_oracle, find_best_multi_xor_with_chunks, oracles::{Challenge17Oracle, Challenge19Oracle, Challenge22Oracle}, padding::Padding, prng::MT19937, transpose};
         use anyhow::Result;
         use rand::RngCore;
+        use rand_core::OsRng;
 
         #[test]
         fn challenge_17() -> Result<()> {
@@ -754,6 +755,55 @@ mod tests {
                 }
             }
             panic!("No seed found");
+        }
+
+        #[test]
+        fn challenge_23() -> Result<()> {
+            let mut y = 123u32;
+            println!("y:  {}", y);
+
+            y ^= y >> 11;
+            println!("y:  {}", y);
+
+            y ^= (y << 7) & 0x9D2C5680;
+            println!("y:  {}", y);
+
+            y ^= (y << 15) & 0xEFC60000;
+            println!("y:  {}", y);
+            y ^= y >> 18;
+            println!("y:  {}", y);
+            println!();
+            assert_eq!(mt19937_untemper(y), 123);
+
+            let mut target = MT19937::new(OsRng.next_u32());
+
+            let mut state = vec![];
+            for _ in 0..624 {
+                state.push(mt19937_untemper(target.next_u32()));
+            }
+
+            let mut cloned = MT19937::from_state(&state, 624)?;
+
+            for _ in 0..10 {
+                assert_eq!(target.next_u32(), cloned.next_u32());
+            }
+
+            Ok(())
+        }
+
+        fn mt19937_untemper(y: u32) -> u32 {
+            let mut y = y;
+            println!("y': {}", y);
+
+            y ^= y >> 18;
+            println!("y': {}", y);
+            y ^= (y << 15) & 0xEFC60000;
+            println!("y': {}", y);
+            y ^= (y << 7) & 0x9D2C5680;
+            println!("y': {}", y);
+            y ^= y >> 11;
+            println!("y': {}", y);
+            y
         }
     }
 }
