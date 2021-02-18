@@ -794,7 +794,7 @@ mod tests {
         use anyhow::Result;
 
         use crate::{file_to_string, oracles};
-        use oracles::Challenge25Oracle;
+        use oracles::{Challenge25Oracle, Challenge26Oracle};
 
         #[test]
         fn challenge_25() -> Result<()> {
@@ -811,7 +811,19 @@ mod tests {
             let guess = crate::xor(&ciphertext, &oracle.ciphertext);
             oracle.assert_success(&guess);
 
-            let guess = String::from_utf8_lossy(&guess);
+            Ok(())
+        }
+
+        #[test]
+        fn challenge_26() -> Result<()> {
+            let oracle = Challenge26Oracle::new();
+            let target = b"A;admin=true;a=b";
+            let mut ciphertext = oracle.encrypt_26("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")?;
+            for (b, m) in ciphertext[48..64].iter_mut().zip(target.iter()) {
+                *b ^= m ^ b'A';
+            }
+            let parsed = oracle.get_fields_26(&ciphertext)?;
+            assert_eq!("true", parsed.get("admin").unwrap());
 
             Ok(())
         }

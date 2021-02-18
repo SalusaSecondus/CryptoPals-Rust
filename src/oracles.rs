@@ -361,6 +361,64 @@ impl Challenge25Oracle {
     }
 }
 
+pub struct Challenge26Oracle {
+    key: AesKey,
+    rng: RefCell<OsRng>,
+}
+
+impl Challenge26Oracle {
+    pub fn new() -> Self {
+        let mut raw_key = [0u8; 16];
+        OsRng.fill_bytes(&mut raw_key);
+        let key = AesKey::new(&raw_key).unwrap();
+
+        Self {
+            key,
+            rng: RefCell::new(OsRng),
+        }
+    }
+
+    fn parse_kv(s: &str, pair_delimiter: char) -> Result<HashMap<String, String>> {
+        let mut result = HashMap::new();
+        for pairs in s.split(pair_delimiter) {
+            let mut parts = pairs.splitn(2, '=');
+            let key = parts.next().context("Missing key")?;
+            let value = parts.next().context("Missing value")?;
+
+            result.insert(key.to_owned(), value.to_owned());
+        }
+
+        Ok(result)
+    }
+
+    pub fn encrypt_26(&self, user_data: &str) -> Result<Vec<u8>> {
+        ensure!(
+            !user_data.contains(';'),
+            "user_data contains invalid character"
+        );
+        ensure!(
+            !user_data.contains('='),
+            "user_data contains invalid character"
+        );
+        let mut plaintext = Vec::from(&b"comment1=cooking%20MCs;userdata="[..]);
+        plaintext.extend_from_slice(&user_data.as_bytes());
+        plaintext.extend_from_slice(b";comment2=%20like%20a%20pound%20of%20bacon");
+
+        let mut iv = vec![];
+        iv.resize_with(16, || self.rng.borrow_mut().gen());
+        let ciphertext = self.key.ctr(&iv, &plaintext);
+        iv.extend(ciphertext.iter());
+
+        Ok(iv)
+    }
+
+    pub fn get_fields_26(&self, ciphertext: &[u8]) -> Result<HashMap<String, String>> {
+        let plaintext = self.key.ctr(&ciphertext[..16], &ciphertext[16..]);
+        let plaintext = String::from_utf8_lossy(&plaintext);
+        Self::parse_kv(&plaintext, ';')
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Set2Oracle;
