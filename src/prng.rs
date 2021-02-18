@@ -42,7 +42,10 @@ impl MT19937 {
         ensure!(state.len() == N);
         ensure!(index <= N);
 
-        Ok(MT19937 { state: state.to_owned(), index })
+        Ok(MT19937 {
+            state: state.to_owned(),
+            index,
+        })
     }
 
     pub fn untemper(val: u32) -> u32 {
@@ -61,7 +64,7 @@ impl MT19937 {
         let mut y = y;
 
         y ^= (y & high_1) >> 11;
-        y ^= (y & (high_1 >> 11 )) >> 11;
+        y ^= (y & (high_1 >> 11)) >> 11;
         y
     }
 
@@ -69,7 +72,7 @@ impl MT19937 {
         let low_15 = 0x7fffu32;
         let mask = 0xefc60000u32;
         let mut val = val;
-    
+
         // Bottom 15 bits are correct
         val ^= ((val & low_15) << 15) & mask;
         // Bottom 30 bits are correct
@@ -81,11 +84,11 @@ impl MT19937 {
         let mut val = val;
         let low_7 = 0x7fu32;
         let mask = 0x9d2c5680u32;
-        
+
         // There has _got_ to be a way to do this
         // in a single operation, but I just can't
         // think of it right now
-        
+
         // Bottom 7 bits are correct
         val ^= ((val & low_7) << 7) & mask;
         // Bottom 14 bits are correct

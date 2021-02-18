@@ -5,11 +5,11 @@ use lazy_static::lazy_static;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
-use time::{SystemTime, UNIX_EPOCH};
 use std::{thread, time};
+use time::{SystemTime, UNIX_EPOCH};
 
-use crate::{aes::AesKey, prng::MT19937};
 use crate::padding::Padding;
+use crate::{aes::AesKey, prng::MT19937};
 
 pub struct Challenge11Oracle();
 
@@ -307,7 +307,10 @@ impl Challenge22Oracle {
         let sleep2 = time::Duration::from_secs(OsRng.gen_range(40..500));
 
         thread::sleep(sleep1);
-        let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32;
         thread::sleep(sleep2);
 
         let mut rng = MT19937::new(seed);
@@ -318,6 +321,43 @@ impl Challenge22Oracle {
 
     pub fn assert_success(&self, guess: u32) {
         assert_eq!(self.seed, guess);
+    }
+}
+
+pub struct Challenge25Oracle {
+    key: AesKey,
+    original_plaintext: Vec<u8>,
+    plaintext: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+}
+
+impl Challenge25Oracle {
+    pub fn new(plaintext: Vec<u8>) -> Self {
+        let key = AesKey::rand_key(128).unwrap();
+        let ciphertext = key.ctr(&[0u8; 16], &plaintext);
+        let original_plaintext = plaintext.clone();
+        Self {
+            key,
+            original_plaintext,
+            plaintext,
+            ciphertext,
+        }
+    }
+
+    pub fn edit(&mut self, offset: usize, new_text: &[u8]) {
+        if self.plaintext.len() < offset + new_text.len() {
+            let extra_needed = offset + new_text.len() - self.plaintext.len();
+            self.plaintext
+                .extend(std::iter::repeat(0u8).take(extra_needed));
+        }
+
+        // Yes, I could just seek in, but this is easier and I'm lazy
+        self.plaintext[offset..new_text.len()].copy_from_slice(new_text);
+        self.ciphertext = self.key.ctr(&[0u8; 16], &self.plaintext);
+    }
+
+    pub fn assert_success(&self, guess: &[u8]) {
+        assert_eq!(self.original_plaintext, guess);
     }
 }
 

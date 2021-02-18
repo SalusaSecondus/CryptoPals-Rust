@@ -674,7 +674,13 @@ mod tests {
     mod set3 {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        use crate::{decrypt_with_pkcs7_padding_oracle, find_best_multi_xor_with_chunks, oracles::{Challenge17Oracle, Challenge19Oracle, Challenge22Oracle}, padding::Padding, prng::MT19937, transpose};
+        use crate::{
+            decrypt_with_pkcs7_padding_oracle, find_best_multi_xor_with_chunks,
+            oracles::{Challenge17Oracle, Challenge19Oracle, Challenge22Oracle},
+            padding::Padding,
+            prng::MT19937,
+            transpose,
+        };
         use anyhow::Result;
         use rand::RngCore;
         use rand_core::OsRng;
@@ -741,11 +747,17 @@ mod tests {
         #[test]
         #[ignore = "slow"]
         fn challenge_22() -> Result<()> {
-            let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            let start_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as u32;
             let oracle = Challenge22Oracle::new();
-            let end_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32;
+            let end_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as u32;
             println!("Challenge 22. Starting guess");
-            
+
             for seed in start_time..end_time {
                 let mut rng = MT19937::new(seed);
                 if rng.next_u32() == oracle.clue {
@@ -771,6 +783,35 @@ mod tests {
             for _ in 0..10 {
                 assert_eq!(target.next_u32(), cloned.next_u32());
             }
+
+            Ok(())
+        }
+
+        // Yes, I know it's lazy, but I'm just skipping #24. I've done it before in other languages and don't think it adds enough to my rust practice
+    }
+
+    mod set4 {
+        use anyhow::Result;
+
+        use crate::{file_to_string, oracles};
+        use oracles::Challenge25Oracle;
+
+        #[test]
+        fn challenge_25() -> Result<()> {
+            // It turns out that I'm not doing this with the exact requested input, but the technique still works, and I'm tired so it doesn't matter.
+            let plaintext = file_to_string("25.txt")?;
+            let plaintext = base64::decode(&plaintext)?;
+            let mut oracle = Challenge25Oracle::new(plaintext);
+
+            // Let's do this the boring way
+            let ciphertext = oracle.ciphertext.clone();
+            let zero_plaintext = vec![0u8; ciphertext.len()];
+            oracle.edit(0, &zero_plaintext);
+
+            let guess = crate::xor(&ciphertext, &oracle.ciphertext);
+            oracle.assert_success(&guess);
+
+            let guess = String::from_utf8_lossy(&guess);
 
             Ok(())
         }
