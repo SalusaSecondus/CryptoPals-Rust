@@ -8,8 +8,11 @@ use rand::{Rng, RngCore};
 use std::{thread, time};
 use time::{SystemTime, UNIX_EPOCH};
 
-use crate::padding::Padding;
 use crate::{aes::AesKey, prng::MT19937};
+use crate::{
+    digest::{Digest, PrefixMac, Sha1},
+    padding::Padding,
+};
 
 pub struct Challenge11Oracle();
 
@@ -458,6 +461,36 @@ impl Challenge26Oracle {
         let plaintext = self.key.ctr(&ciphertext[..16], &ciphertext[16..]);
         let plaintext = String::from_utf8_lossy(&plaintext);
         Self::parse_kv(&plaintext, ';')
+    }
+}
+
+pub struct Challenge29Oracle {
+    key: Vec<u8>,
+}
+
+impl Challenge29Oracle {
+    pub fn new() -> Self {
+        let prefix_range = Uniform::new_inclusive(5, 10);
+        let mut key = vec![];
+        key.resize_with(prefix_range.sample(&mut OsRng), || OsRng.gen());
+        Self { key }
+    }
+
+    pub fn get_signed_message() -> Vec<u8> {
+        "comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon".as_bytes().to_owned()
+    }
+
+    pub fn get_challenge(&self) -> Vec<u8> {
+        let mut mac = PrefixMac::new(Sha1::default(), &self.key);
+        mac.update(&Self::get_signed_message());
+        mac.digest()
+    }
+
+    pub fn is_valid(&self, message: &[u8], tag: &[u8]) -> bool {
+        let mut mac = PrefixMac::new(Sha1::default(), &self.key);
+        mac.update(message);
+        // Yes, this next line is not constant time
+        mac.digest() == tag
     }
 }
 
