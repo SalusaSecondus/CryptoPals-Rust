@@ -794,7 +794,7 @@ mod tests {
         use anyhow::Result;
 
         use crate::{file_to_string, oracles};
-        use oracles::{Challenge25Oracle, Challenge26Oracle};
+        use oracles::{Challenge25Oracle, Challenge26Oracle, Set2Oracle};
 
         #[test]
         fn challenge_25() -> Result<()> {
@@ -825,6 +825,27 @@ mod tests {
             let parsed = oracle.get_fields_26(&ciphertext)?;
             assert_eq!("true", parsed.get("admin").unwrap());
 
+            Ok(())
+        }
+
+        #[test]
+        fn challenge_27() -> Result<()> {
+            let oracle = Set2Oracle::new();
+            let ciphertext = oracle.encrypt_27("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")?;
+            let mut tampered = vec![];
+            tampered.extend_from_slice(&ciphertext[0..16]);
+            tampered.resize(32, 0);
+            tampered.extend_from_slice(&ciphertext[0..16]);
+            // Finally, make sure we have proper padding
+            tampered.extend_from_slice(&ciphertext[ciphertext.len()-32..]);
+            
+            let plaintext = oracle.decrypt_27(&tampered);
+            let plaintext = match plaintext {
+                Err(vec) => vec,
+                Ok(text) => text.as_bytes().to_owned()
+            };
+            let key = crate::xor(&plaintext[0..16], &plaintext[32..48]);
+            oracle.assert_27(&key);
             Ok(())
         }
     }

@@ -51,6 +51,7 @@ impl Challenge11Oracle {
 }
 
 pub struct Set2Oracle {
+    raw_key: [u8; 16],
     key: AesKey,
     prefix: Vec<u8>,
     rng: RefCell<OsRng>,
@@ -67,6 +68,7 @@ impl Set2Oracle {
         prefix.resize_with(prefix_range.sample(&mut OsRng), || OsRng.gen());
 
         Set2Oracle {
+            raw_key,
             key,
             prefix,
             rng: RefCell::new(OsRng),
@@ -171,6 +173,46 @@ impl Set2Oracle {
             .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt))
             .map(|pt| String::from_utf8_lossy(&pt).to_string())
             .and_then(|pt| Set2Oracle::parse_kv(&pt, ';'))
+    }
+
+    pub fn encrypt_27(&self, user_data: &str) -> Result<Vec<u8>> {
+        ensure!(
+            !user_data.contains(';'),
+            "user_data contains invalid character"
+        );
+        ensure!(
+            !user_data.contains('='),
+            "user_data contains invalid character"
+        );
+        let mut plaintext = Vec::from(&b"comment1=cooking%20MCs;userdata="[..]);
+        plaintext.extend_from_slice(&user_data.as_bytes());
+        plaintext.extend_from_slice(b";comment2=%20like%20a%20pound%20of%20bacon");
+
+        plaintext = Padding::Pkcs7Padding(16).pad(&plaintext)?;
+
+        let ciphertext = self.key.encrypt_cbc(&self.raw_key, &plaintext)?;
+
+        Ok(ciphertext)
+    }
+
+    pub fn decrypt_27(&self, ciphertext: &[u8]) -> std::result::Result<String, Vec<u8>> {
+        let plaintext = self
+            .key
+            .decrypt_cbc(&self.raw_key, ciphertext)
+            .and_then(|pt| Padding::Pkcs7Padding(16).unpad(&pt));
+        if plaintext.is_err() {
+            return Err(vec![]);
+        }
+        let plaintext = plaintext.unwrap();
+        if plaintext.iter().filter(|b| **b > 127u8).count() > 0 {
+            Err(plaintext)
+        } else {
+            Ok(String::from_utf8_lossy(&plaintext).to_string())
+        }
+    }
+
+    pub fn assert_27(&self, guess: &[u8]) {
+        assert_eq!(&self.raw_key, guess);
     }
 }
 

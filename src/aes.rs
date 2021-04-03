@@ -126,15 +126,15 @@ impl AesKey {
             .collect())
     }
 
-    pub fn decrypt_cbc(&self, iv: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+    pub fn decrypt_cbc(&self, iv: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
         ensure!(
-            plaintext.len() % BLOCK_SIZE == 0,
+            ciphertext.len() % BLOCK_SIZE == 0,
             "Not a multiple of the block size"
         );
         ensure!(iv.len() >= BLOCK_SIZE, "IV is not long enough");
 
         let mut previous_block = Vec::from(&iv[iv.len() - 16..]);
-        Ok(plaintext
+        Ok(ciphertext
             .chunks_exact(BLOCK_SIZE)
             .flat_map(|ct_block| {
                 let pt_block = xor(&self.decrypt_block(ct_block), &previous_block);
