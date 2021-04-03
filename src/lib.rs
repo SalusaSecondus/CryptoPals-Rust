@@ -10,6 +10,7 @@ use std::{
 };
 
 mod aes;
+mod digest;
 mod oracles;
 mod padding;
 mod prng;
@@ -831,18 +832,19 @@ mod tests {
         #[test]
         fn challenge_27() -> Result<()> {
             let oracle = Set2Oracle::new();
-            let ciphertext = oracle.encrypt_27("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")?;
+            let ciphertext =
+                oracle.encrypt_27("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")?;
             let mut tampered = vec![];
             tampered.extend_from_slice(&ciphertext[0..16]);
             tampered.resize(32, 0);
             tampered.extend_from_slice(&ciphertext[0..16]);
             // Finally, make sure we have proper padding
-            tampered.extend_from_slice(&ciphertext[ciphertext.len()-32..]);
-            
+            tampered.extend_from_slice(&ciphertext[ciphertext.len() - 32..]);
+
             let plaintext = oracle.decrypt_27(&tampered);
             let plaintext = match plaintext {
                 Err(vec) => vec,
-                Ok(text) => text.as_bytes().to_owned()
+                Ok(text) => text.as_bytes().to_owned(),
             };
             let key = crate::xor(&plaintext[0..16], &plaintext[32..48]);
             oracle.assert_27(&key);
