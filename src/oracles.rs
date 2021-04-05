@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
 
 use anyhow::{ensure, Context, Result};
 use lazy_static::lazy_static;
@@ -10,7 +10,7 @@ use time::{SystemTime, UNIX_EPOCH};
 
 use crate::{aes::AesKey, prng::MT19937};
 use crate::{
-    digest::{Digest, PrefixMac, Sha1},
+    digest::{Digest, PrefixMac},
     padding::Padding,
 };
 
@@ -464,30 +464,33 @@ impl Challenge26Oracle {
     }
 }
 
-pub struct Challenge29Oracle {
+pub struct Challenge29Oracle <T: Digest + Default> {
     key: Vec<u8>,
+    digest_type: PhantomData<T>
 }
 
-impl Challenge29Oracle {
-    pub fn new() -> Self {
+impl <T: Digest + Default> Challenge29Oracle<T> {
+    pub fn  new() -> Self {
         let prefix_range = Uniform::new_inclusive(5, 10);
         let mut key = vec![];
         key.resize_with(prefix_range.sample(&mut OsRng), || OsRng.gen());
-        Self { key }
+        Self { key, digest_type: PhantomData }
     }
 
     pub fn get_signed_message() -> Vec<u8> {
-        "comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon".as_bytes().to_owned()
+        "comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon"
+            .as_bytes()
+            .to_owned()
     }
 
     pub fn get_challenge(&self) -> Vec<u8> {
-        let mut mac = PrefixMac::new(Sha1::default(), &self.key);
+        let mut mac = PrefixMac::new(T::default(), &self.key);
         mac.update(&Self::get_signed_message());
         mac.digest()
     }
 
     pub fn is_valid(&self, message: &[u8], tag: &[u8]) -> bool {
-        let mut mac = PrefixMac::new(Sha1::default(), &self.key);
+        let mut mac = PrefixMac::new(T::default(), &self.key);
         mac.update(message);
         // Yes, this next line is not constant time
         mac.digest() == tag
