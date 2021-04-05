@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 pub trait Digest: Clone {
     fn reset(&mut self);
     fn update(&mut self, input: &[u8]);
@@ -25,12 +27,10 @@ impl Default for Sha1 {
     }
 }
 
-fn to_w32(chunk: &[u8]) -> Vec<u32> {
+fn to_w32_be(chunk: &[u8]) -> Vec<u32> {
     chunk
         .chunks_exact(4)
-        .map(|word| {
-            (word[0] as u32) << 24 | (word[1] as u32) << 16 | (word[2] as u32) << 8 | word[3] as u32
-        })
+        .map(|word| u32::from_be_bytes(word.try_into().unwrap()))
         .collect()
 }
 
@@ -38,7 +38,7 @@ impl Sha1 {
     const CHUNK_SIZE: usize = 64;
 
     pub fn from_hash(hash: &[u8], length: usize) -> Self {
-        let word = to_w32(hash);
+        let word = to_w32_be(hash);
         let mut h = [0u32; 5];
         h.copy_from_slice(&word);
         Self {
@@ -50,7 +50,7 @@ impl Sha1 {
 
     fn compress(&mut self, chunk: &[u8]) {
         // println!("Compress: {}", hex::encode(chunk));
-        let mut w = to_w32(&chunk);
+        let mut w = to_w32_be(&chunk);
         w.resize(80, 0);
         for i in 16..80 {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
@@ -134,16 +134,7 @@ impl Digest for Sha1 {
         }
         self.buffer
             .extend(std::iter::repeat(0).take(padding_needed as usize));
-        let mut length = [0u8; 8];
-        length[0] = (self.ml >> 56) as u8 & 0xff;
-        length[1] = (self.ml >> 48) as u8 & 0xff;
-        length[2] = (self.ml >> 40) as u8 & 0xff;
-        length[3] = (self.ml >> 32) as u8 & 0xff;
-        length[4] = (self.ml >> 24) as u8 & 0xff;
-        length[5] = (self.ml >> 16) as u8 & 0xff;
-        length[6] = (self.ml >> 8) as u8 & 0xff;
-        length[7] = self.ml as u8 & 0xff;
-        self.buffer.extend_from_slice(&length);
+        self.buffer.extend_from_slice(&self.ml.to_be_bytes());
         assert_eq!(0, self.buffer.len() % Sha1::CHUNK_SIZE);
         self.buffer
             .clone()
@@ -231,7 +222,7 @@ impl MD4 {
     const  I3:u32 = 0x10325476;
 
     pub fn from_hash(hash: &[u8], length: usize) -> Self {
-        let word: Vec<u32> = to_w32(hash).iter().map(|w| u32::from_be(*w)).collect();
+        let word: Vec<u32> = to_w32_be(hash).iter().map(|w| u32::from_be(*w)).collect();
         let mut h = [0u32; 4];
         h.copy_from_slice(&word);
         Self {
@@ -257,7 +248,7 @@ impl MD4 {
         let hs3 = 11;
         let hs4 = 15;
 
-        let X: Vec<u32> = to_w32(chunk);
+        let X: Vec<u32> = to_w32_be(chunk);
         let X: Vec<u32> = X.iter().map(|w| u32::from_be(*w)).collect();
         let mut A = self.h[0];
         let mut B = self.h[1];
@@ -400,16 +391,7 @@ impl Digest for MD4 {
         }
         self.buffer
             .extend(std::iter::repeat(0).take(padding_needed as usize));
-        let mut length = [0u8; 8];
-        length[7] = (self.ml >> 56) as u8 & 0xff;
-        length[6] = (self.ml >> 48) as u8 & 0xff;
-        length[5] = (self.ml >> 40) as u8 & 0xff;
-        length[4] = (self.ml >> 32) as u8 & 0xff;
-        length[3] = (self.ml >> 24) as u8 & 0xff;
-        length[2] = (self.ml >> 16) as u8 & 0xff;
-        length[1] = (self.ml >> 8) as u8 & 0xff;
-        length[0] = self.ml as u8 & 0xff;
-        self.buffer.extend_from_slice(&length);
+        self.buffer.extend_from_slice(&self.ml.to_le_bytes());
         assert_eq!(0, self.buffer.len() % MD4::CHUNK_SIZE);
         self.buffer
             .clone()
