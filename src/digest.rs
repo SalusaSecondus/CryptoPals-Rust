@@ -6,6 +6,7 @@ pub trait Digest: Clone {
     fn digest(&mut self) -> Vec<u8>;
 
     fn digest_size() -> usize;
+    fn block_size() -> usize;
 }
 
 #[derive(Clone)]
@@ -35,8 +36,6 @@ fn to_w32_be(chunk: &[u8]) -> Vec<u32> {
 }
 
 impl Sha1 {
-    const CHUNK_SIZE: usize = 64;
-
     pub fn from_hash(hash: &[u8], length: usize) -> Self {
         let word = to_w32_be(hash);
         let mut h = [0u32; 5];
@@ -115,8 +114,8 @@ impl Digest for Sha1 {
         self.ml += (input.len() as u64) * 8u64;
         let mut merged = self.buffer.clone();
         merged.extend(input);
-        for chunk in merged.chunks(Sha1::CHUNK_SIZE) {
-            if chunk.len() != Sha1::CHUNK_SIZE {
+        for chunk in merged.chunks(Self::block_size()) {
+            if chunk.len() != Self::block_size() {
                 self.buffer.resize(chunk.len(), 0);
                 self.buffer.copy_from_slice(chunk);
                 return;
@@ -128,17 +127,17 @@ impl Digest for Sha1 {
     fn digest(&mut self) -> Vec<u8> {
         // add a trailing 1
         self.buffer.extend_from_slice(&[0x80]);
-        let mut padding_needed = 56i32 - (self.buffer.len() % Sha1::CHUNK_SIZE) as i32;
+        let mut padding_needed = 56i32 - (self.buffer.len() % Self::block_size()) as i32;
         if padding_needed < 0 {
-            padding_needed += Sha1::CHUNK_SIZE as i32;
+            padding_needed += Self::block_size() as i32;
         }
         self.buffer
             .extend(std::iter::repeat(0).take(padding_needed as usize));
         self.buffer.extend_from_slice(&self.ml.to_be_bytes());
-        assert_eq!(0, self.buffer.len() % Sha1::CHUNK_SIZE);
+        assert_eq!(0, self.buffer.len() % Self::block_size());
         self.buffer
             .clone()
-            .chunks_exact(Sha1::CHUNK_SIZE)
+            .chunks_exact(Self::block_size())
             .for_each(|c| self.compress(c));
 
         let mut hh = vec![];
@@ -153,6 +152,10 @@ impl Digest for Sha1 {
 
     fn digest_size() -> usize {
         return 20;
+    }
+
+    fn block_size() -> usize {
+        64
     }
 }
 
@@ -192,6 +195,10 @@ impl<T: Digest> Digest for PrefixMac<T> {
     fn digest_size() -> usize {
         T::digest_size()
     }
+
+    fn block_size() -> usize {
+        T::block_size()
+    }
 }
 
 #[derive(Clone)]
@@ -215,7 +222,6 @@ impl Default for MD4 {
 
 #[allow(non_snake_case)]
 impl MD4 {
-    const CHUNK_SIZE: usize = 64;
     const  I0:u32 = 0x67452301;      /* Initial values for MD buffer */
     const  I1:u32 = 0xefcdab89;
     const  I2:u32 = 0x98badcfe;
@@ -372,8 +378,8 @@ impl Digest for MD4 {
         self.ml += (input.len() as u64) * 8u64;
         let mut merged = self.buffer.clone();
         merged.extend(input);
-        for chunk in merged.chunks(MD4::CHUNK_SIZE) {
-            if chunk.len() != MD4::CHUNK_SIZE {
+        for chunk in merged.chunks(Self::block_size()) {
+            if chunk.len() != Self::block_size() {
                 self.buffer.resize(chunk.len(), 0);
                 self.buffer.copy_from_slice(chunk);
                 return;
@@ -385,17 +391,17 @@ impl Digest for MD4 {
     fn digest(&mut self) -> Vec<u8> {
         // add a trailing 1
         self.buffer.extend_from_slice(&[0x80]);
-        let mut padding_needed = 56i32 - (self.buffer.len() % MD4::CHUNK_SIZE) as i32;
+        let mut padding_needed = 56i32 - (self.buffer.len() % Self::block_size()) as i32;
         if padding_needed < 0 {
-            padding_needed += MD4::CHUNK_SIZE as i32;
+            padding_needed += Self::block_size() as i32;
         }
         self.buffer
             .extend(std::iter::repeat(0).take(padding_needed as usize));
         self.buffer.extend_from_slice(&self.ml.to_le_bytes());
-        assert_eq!(0, self.buffer.len() % MD4::CHUNK_SIZE);
+        assert_eq!(0, self.buffer.len() % Self::block_size());
         self.buffer
             .clone()
-            .chunks_exact(MD4::CHUNK_SIZE)
+            .chunks_exact(Self::block_size())
             .for_each(|c| self.compress(c));
 
         let mut hh = vec![];
@@ -409,6 +415,68 @@ impl Digest for MD4 {
 
     fn digest_size() -> usize {
         return 16;
+    }
+
+    fn block_size() -> usize {
+        64
+    }
+}
+
+#[derive(Clone)]
+struct Hmac<T: Digest + Default> {
+    digest: T,
+    i_key: Vec<u8>,
+    o_key: Vec<u8>
+}
+
+impl <T: Digest + Default> Hmac<T> {
+    pub fn init_new(key: &[u8]) -> Self {
+        let mut digest = T::default();
+        let raw_key = if key.len() > T::block_size() {
+            digest.update(key);
+            digest.digest()
+        } else {
+            let mut tmp = key.to_vec();
+            tmp.resize(T::block_size(), 0);
+            tmp
+        };
+        let o_key = crate::xor(&raw_key, &[0x5c]);
+        let i_key = crate::xor(&raw_key, &[0x36]);
+        let mut result = Self {
+            digest,
+            i_key,
+            o_key
+        };
+        result.reset();
+        result
+    }
+}
+
+impl <T: Digest + Default> Digest for Hmac<T> {
+    fn reset(&mut self) {
+        self.digest.reset();
+        self.digest.update(&self.i_key);
+    }
+
+    fn update(&mut self, input: &[u8]) {
+        self.digest.update(input);
+    }
+
+    fn digest(&mut self) -> Vec<u8> {
+        let tmp = self.digest.digest();
+        self.digest.update(&self.o_key);
+        self.digest.update(&tmp);
+        let result = self.digest.digest();
+        self.reset();
+        result
+    }
+
+    fn digest_size() -> usize {
+        T::digest_size()
+    }
+
+    fn block_size() -> usize {
+        T::block_size()
     }
 }
 
@@ -459,6 +527,13 @@ mod tests {
             hash.update(test.0);
             assert_eq!(test.1, to_hex(hash.digest()));
         }
+    }
+
+    #[test]
+    fn hmac_sha1_kats() {
+        let mut hmac = Hmac::<Sha1>::init_new(b"key");
+        hmac.update(b"The quick brown fox jumps over the lazy dog");
+        assert_eq!("de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9", to_hex(hmac.digest()));
     }
 
     #[test]
