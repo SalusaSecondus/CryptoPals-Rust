@@ -6,7 +6,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use lazy_static::lazy_static;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
@@ -512,67 +512,27 @@ impl<T: Digest + Default> Challenge29Oracle<T> {
     }
 }
 
-pub struct OracleServer<F>
-where
-    F: Fn(Request) -> (),
-    F: 'static + Send + Clone,
-{
+pub trait OracleServerHandler: 'static + Send + Clone + Fn(&Request) -> Result<String> {}
+
+impl<T> OracleServerHandler for T where T: 'static + Send + Clone + Fn(&Request) -> Result<String> {}
+
+pub struct OracleServer<F: OracleServerHandler> {
     running: Arc<AtomicBool>,
     server: Arc<Server>,
     handler: F,
 }
 
-// pub fn new_challenge31() -> Challenge31Oracle<impl Send + Sync + 'static + Fn(&Request) -> Response>
-// {
-//     let mut key = [0u8; 20];
-//     OsRng.fill_bytes(&mut key[..]);
-
-//     let handler = move |request: &Request| {
-//         Response::text("hello world")
-//         // if let Some(file) = request.get_param("file") {
-//         //     if let Some(sig) = request.get_param("signature") {
-//         //         let sig = hex::decode(sig).unwrap_or(vec![]);
-//         //         let mut hmac = Hmac::<Sha1>::init_new(&key);
-//         //         hmac.update(file.as_bytes());
-//         //         let tag = hmac.digest();
-//         //         if tag.len() != sig.len() {
-//         //             return Response::empty_400();
-//         //         }
-//         //         for (a, b) in tag.iter().zip(sig.iter()) {
-//         //             if a != b {
-//         //                 return Response::empty_400();
-//         //             }
-//         //             sleep(Duration::from_millis(50));
-//         //         }
-//         //     }
-//         // }
-//         // return Response::empty_404();
-//     };
-
-//     let server = Server::new("127.0.0.1:0", handler).unwrap();
-//     server.run();
-//     Challenge31Oracle { server, running: true }
-// }
-
-impl<F> Drop for OracleServer<F>
-where
-    F: Fn(Request) -> (),
-    F: 'static + Send + Clone,
-{
+impl<F: OracleServerHandler> Drop for OracleServer<F> {
     fn drop(&mut self) {
         self.stop();
     }
 }
 
-pub fn hello_response(rq: Request) {
-    let _ = rq.respond(Response::from_string("Hello world!"));
+pub fn hello_response(_rq: &Request) -> Result<String> {
+    Ok("Hello world!".to_owned())
 }
 
-impl<F> OracleServer<F>
-where
-    F: Fn(Request) -> (),
-    F: 'static + Send + Clone,
-{
+impl<F: OracleServerHandler> OracleServer<F> {
     pub fn new(handler: F) -> Self {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let server = Arc::new(server);
@@ -596,7 +556,13 @@ where
                 while running.load(std::sync::atomic::Ordering::Relaxed) {
                     match server.recv_timeout(Duration::from_millis(500)) {
                         Ok(Some(rq)) => {
-                            handler(rq);
+                            let response = match handler(&rq) {
+                                Err(err) => {
+                                    Response::from_string(err.to_string()).with_status_code(400)
+                                }
+                                Ok(s) => Response::from_string(s),
+                            };
+                            let _ = rq.respond(response);
                         }
                         Ok(None) => {}
                         _ => {}
@@ -621,6 +587,40 @@ where
     }
 }
 
+fn parse_query_params(url: &str) -> Result<HashMap<String, String>> {
+    let parts: Vec<&str> = url.splitn(2, "?").collect();
+    let query_part = *parts.get(1).unwrap_or(&"");
+
+    Set2Oracle::parse_kv(query_part, '&')
+}
+
+pub fn challenge31() -> OracleServer<impl OracleServerHandler> {
+    let mut key = [0u8; 20];
+    OsRng.fill_bytes(&mut key[..]);
+    let key = key;
+
+    let handler = move |request: &Request| {
+        let params = parse_query_params(request.url());
+        let params = params?;
+        let file = params.get("file").context("Missing file param")?;
+        let sig = params.get("signature").context("Missing signature")?;
+        let sig = hex::decode(sig)?;
+        let mut hmac = Hmac::<Sha1>::init_new(&key);
+        hmac.update(&file.as_bytes());
+        let expected_sig = hmac.digest();
+        if expected_sig.len() != sig.len() {
+            bail!("Bad signature");
+        }
+        for (a, b) in expected_sig.iter().zip(sig.iter()) {
+            sleep(Duration::from_millis(500));
+            ensure!(a == b, "Bad signature")
+        }
+        Ok("Good Signature".to_string())
+    };
+
+    OracleServer::new(handler)
+}
+
 #[cfg(test)]
 mod tests {
     use super::Set2Oracle;
@@ -633,6 +633,17 @@ mod tests {
         assert_eq!(false, oracle.is_admin_13(&ct));
         assert_eq!("user", oracle.get_role_13(&ct)?);
 
+        Ok(())
+    }
+
+    #[test]
+    fn server() -> Result<()> {
+        let server = super::OracleServer::new(super::hello_response);
+        let client = reqwest::blocking::Client::new();
+        let request = client.get(server.get_base_url());
+        let result = request.send()?;
+        assert!(result.status().is_success());
+        assert_eq!("Hello world!", result.text()?);
         Ok(())
     }
 }

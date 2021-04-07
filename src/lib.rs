@@ -795,7 +795,7 @@ mod tests {
         use anyhow::Result;
 
         use crate::{file_to_string, oracles};
-        use oracles::{Challenge25Oracle, Challenge26Oracle, OracleServer, Set2Oracle};
+        use oracles::{challenge31, Challenge25Oracle, Challenge26Oracle, Set2Oracle};
 
         #[test]
         fn challenge_25() -> Result<()> {
@@ -853,7 +853,7 @@ mod tests {
 
         #[test]
         fn challenge_31() -> Result<()> {
-            let mut oracle = OracleServer::new(oracles::hello_response);
+            let mut oracle = challenge31();
             let address = oracle.get_server_addr();
             println!("Address: {:?}", address);
             let base_url = oracle.get_base_url();
@@ -861,7 +861,7 @@ mod tests {
             let client = reqwest::blocking::Client::new();
             let request = client
                 .get(base_url)
-                .query(&[("foo", "bar"), ("signature", "invalid")]);
+                .query(&[("file", "bar"), ("signature", "0a0b0c0d0e")]);
             let result = request.send()?;
             println!("Result {:?}", result);
             println!("Result {:?}", result.text());
