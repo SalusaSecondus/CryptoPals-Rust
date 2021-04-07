@@ -222,10 +222,10 @@ impl Default for MD4 {
 
 #[allow(non_snake_case)]
 impl MD4 {
-    const  I0:u32 = 0x67452301;      /* Initial values for MD buffer */
-    const  I1:u32 = 0xefcdab89;
-    const  I2:u32 = 0x98badcfe;
-    const  I3:u32 = 0x10325476;
+    const I0: u32 = 0x67452301; /* Initial values for MD buffer */
+    const I1: u32 = 0xefcdab89;
+    const I2: u32 = 0x98badcfe;
+    const I3: u32 = 0x10325476;
 
     pub fn from_hash(hash: &[u8], length: usize) -> Self {
         let word: Vec<u32> = to_w32_be(hash).iter().map(|w| u32::from_be(*w)).collect();
@@ -423,13 +423,13 @@ impl Digest for MD4 {
 }
 
 #[derive(Clone)]
-struct Hmac<T: Digest + Default> {
+pub struct Hmac<T: Digest> {
     digest: T,
     i_key: Vec<u8>,
-    o_key: Vec<u8>
+    o_key: Vec<u8>,
 }
 
-impl <T: Digest + Default> Hmac<T> {
+impl<T: Digest + Default> Hmac<T> {
     pub fn init_new(key: &[u8]) -> Self {
         let mut digest = T::default();
         let raw_key = if key.len() > T::block_size() {
@@ -445,14 +445,14 @@ impl <T: Digest + Default> Hmac<T> {
         let mut result = Self {
             digest,
             i_key,
-            o_key
+            o_key,
         };
         result.reset();
         result
     }
 }
 
-impl <T: Digest + Default> Digest for Hmac<T> {
+impl<T: Digest + Default> Digest for Hmac<T> {
     fn reset(&mut self) {
         self.digest.reset();
         self.digest.update(&self.i_key);
@@ -533,7 +533,10 @@ mod tests {
     fn hmac_sha1_kats() {
         let mut hmac = Hmac::<Sha1>::init_new(b"key");
         hmac.update(b"The quick brown fox jumps over the lazy dog");
-        assert_eq!("de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9", to_hex(hmac.digest()));
+        assert_eq!(
+            "de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9",
+            to_hex(hmac.digest())
+        );
     }
 
     #[test]

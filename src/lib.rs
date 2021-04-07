@@ -859,7 +859,9 @@ mod tests {
             let base_url = oracle.get_base_url();
             println!("Base address: {}", base_url);
             let client = reqwest::blocking::Client::new();
-            let request = client.get(base_url).query(&[("foo", "bar"), ("signature", "invalid")]);
+            let request = client
+                .get(base_url)
+                .query(&[("foo", "bar"), ("signature", "invalid")]);
             let result = request.send()?;
             println!("Result {:?}", result);
             println!("Result {:?}", result.text());

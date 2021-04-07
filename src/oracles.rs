@@ -1,14 +1,20 @@
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, net::SocketAddr, sync::{Arc, atomic::AtomicBool}};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    marker::PhantomData,
+    net::SocketAddr,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use anyhow::{ensure, Context, Result};
 use lazy_static::lazy_static;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
-use tiny_http::{Request, Response, Server};
 use std::{thread, time};
 use thread::sleep;
 use time::{Duration, SystemTime, UNIX_EPOCH};
+use tiny_http::{Request, Response, Server};
 
 use crate::{
     aes::AesKey,
@@ -507,11 +513,13 @@ impl<T: Digest + Default> Challenge29Oracle<T> {
 }
 
 pub struct OracleServer<F>
-where F: Fn(Request) -> (),
-F: 'static + Send + Clone {
+where
+    F: Fn(Request) -> (),
+    F: 'static + Send + Clone,
+{
     running: Arc<AtomicBool>,
     server: Arc<Server>,
-    handler: F
+    handler: F,
 }
 
 // pub fn new_challenge31() -> Challenge31Oracle<impl Send + Sync + 'static + Fn(&Request) -> Response>
@@ -546,10 +554,11 @@ F: 'static + Send + Clone {
 //     Challenge31Oracle { server, running: true }
 // }
 
-impl <F> Drop for OracleServer<F>
-where F: Fn(Request) -> (),
-F: 'static + Send + Clone {
-
+impl<F> Drop for OracleServer<F>
+where
+    F: Fn(Request) -> (),
+    F: 'static + Send + Clone,
+{
     fn drop(&mut self) {
         self.stop();
     }
@@ -559,20 +568,26 @@ pub fn hello_response(rq: Request) {
     let _ = rq.respond(Response::from_string("Hello world!"));
 }
 
-impl <F> OracleServer<F>
-where F: Fn(Request) -> (),
-F: 'static + Send + Clone {
+impl<F> OracleServer<F>
+where
+    F: Fn(Request) -> (),
+    F: 'static + Send + Clone,
+{
     pub fn new(handler: F) -> Self {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let server = Arc::new(server);
         let running = Arc::new(AtomicBool::from(true));
-        let result = Self { server, running, handler };
+        let result = Self {
+            server,
+            running,
+            handler,
+        };
         result.start();
         result
     }
 
     fn start(&self) {
-        for _ in 0 .. 4 {
+        for _ in 0..4 {
             let server = self.server.clone();
             let running = self.running.clone();
             let handler = self.handler.clone();
@@ -582,8 +597,8 @@ F: 'static + Send + Clone {
                     match server.recv_timeout(Duration::from_millis(500)) {
                         Ok(Some(rq)) => {
                             handler(rq);
-                        },
-                        Ok(None) => {},
+                        }
+                        Ok(None) => {}
                         _ => {}
                     };
                 }
@@ -601,7 +616,8 @@ F: 'static + Send + Clone {
     }
 
     pub fn stop(&mut self) {
-        self.running.store(false, std::sync::atomic::Ordering::Release);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 }
 
