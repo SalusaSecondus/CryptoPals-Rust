@@ -1,14 +1,20 @@
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData, net::SocketAddr, sync::{Arc, atomic::AtomicBool}};
 
 use anyhow::{ensure, Context, Result};
 use lazy_static::lazy_static;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
+use tiny_http::{Request, Response, Server};
 use std::{thread, time};
-use time::{SystemTime, UNIX_EPOCH};
+use thread::sleep;
+use time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::{aes::AesKey, prng::MT19937};
+use crate::{
+    aes::AesKey,
+    digest::{Hmac, Sha1},
+    prng::MT19937,
+};
 use crate::{
     digest::{Digest, PrefixMac},
     padding::Padding,
@@ -464,17 +470,20 @@ impl Challenge26Oracle {
     }
 }
 
-pub struct Challenge29Oracle <T: Digest + Default> {
+pub struct Challenge29Oracle<T: Digest + Default> {
     key: Vec<u8>,
-    digest_type: PhantomData<T>
+    digest_type: PhantomData<T>,
 }
 
-impl <T: Digest + Default> Challenge29Oracle<T> {
-    pub fn  new() -> Self {
+impl<T: Digest + Default> Challenge29Oracle<T> {
+    pub fn new() -> Self {
         let prefix_range = Uniform::new_inclusive(5, 10);
         let mut key = vec![];
         key.resize_with(prefix_range.sample(&mut OsRng), || OsRng.gen());
-        Self { key, digest_type: PhantomData }
+        Self {
+            key,
+            digest_type: PhantomData,
+        }
     }
 
     pub fn get_signed_message() -> Vec<u8> {
@@ -494,6 +503,105 @@ impl <T: Digest + Default> Challenge29Oracle<T> {
         mac.update(message);
         // Yes, this next line is not constant time
         mac.digest() == tag
+    }
+}
+
+pub struct OracleServer<F>
+where F: Fn(Request) -> (),
+F: 'static + Send + Clone {
+    running: Arc<AtomicBool>,
+    server: Arc<Server>,
+    handler: F
+}
+
+// pub fn new_challenge31() -> Challenge31Oracle<impl Send + Sync + 'static + Fn(&Request) -> Response>
+// {
+//     let mut key = [0u8; 20];
+//     OsRng.fill_bytes(&mut key[..]);
+
+//     let handler = move |request: &Request| {
+//         Response::text("hello world")
+//         // if let Some(file) = request.get_param("file") {
+//         //     if let Some(sig) = request.get_param("signature") {
+//         //         let sig = hex::decode(sig).unwrap_or(vec![]);
+//         //         let mut hmac = Hmac::<Sha1>::init_new(&key);
+//         //         hmac.update(file.as_bytes());
+//         //         let tag = hmac.digest();
+//         //         if tag.len() != sig.len() {
+//         //             return Response::empty_400();
+//         //         }
+//         //         for (a, b) in tag.iter().zip(sig.iter()) {
+//         //             if a != b {
+//         //                 return Response::empty_400();
+//         //             }
+//         //             sleep(Duration::from_millis(50));
+//         //         }
+//         //     }
+//         // }
+//         // return Response::empty_404();
+//     };
+
+//     let server = Server::new("127.0.0.1:0", handler).unwrap();
+//     server.run();
+//     Challenge31Oracle { server, running: true }
+// }
+
+impl <F> Drop for OracleServer<F>
+where F: Fn(Request) -> (),
+F: 'static + Send + Clone {
+
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+pub fn hello_response(rq: Request) {
+    let _ = rq.respond(Response::from_string("Hello world!"));
+}
+
+impl <F> OracleServer<F>
+where F: Fn(Request) -> (),
+F: 'static + Send + Clone {
+    pub fn new(handler: F) -> Self {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let server = Arc::new(server);
+        let running = Arc::new(AtomicBool::from(true));
+        let result = Self { server, running, handler };
+        result.start();
+        result
+    }
+
+    fn start(&self) {
+        for _ in 0 .. 4 {
+            let server = self.server.clone();
+            let running = self.running.clone();
+            let handler = self.handler.clone();
+
+            let _ = thread::spawn(move || {
+                while running.load(std::sync::atomic::Ordering::Relaxed) {
+                    match server.recv_timeout(Duration::from_millis(500)) {
+                        Ok(Some(rq)) => {
+                            handler(rq);
+                        },
+                        Ok(None) => {},
+                        _ => {}
+                    };
+                }
+            });
+        }
+    }
+
+    pub fn get_server_addr(&self) -> SocketAddr {
+        self.server.server_addr()
+    }
+
+    pub fn get_base_url(&self) -> String {
+        let address = self.get_server_addr();
+        format!("http://{}:{}/", address.ip(), address.port())
+    }
+
+    pub fn stop(&mut self) {
+        self.running.store(false, std::sync::atomic::Ordering::Release);
     }
 }
 
