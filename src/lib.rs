@@ -11,6 +11,7 @@ use std::{
 
 mod aes;
 mod digest;
+mod math;
 mod oracles;
 mod padding;
 mod prng;
@@ -795,7 +796,7 @@ mod tests {
         use anyhow::{bail, Result};
 
         use crate::{file_to_string, oracles};
-        use oracles::{Challenge25Oracle, Challenge26Oracle, Set2Oracle, challenge3x};
+        use oracles::{challenge3x, Challenge25Oracle, Challenge26Oracle, Set2Oracle};
         use std::time::{Duration, Instant};
 
         #[test]
@@ -874,7 +875,7 @@ mod tests {
                     for _ in 0..TRIALS {
                         let request = client
                             .get(&base_url)
-                            .query(&[("file", "bar"), ("signature", &sig_hex)]);      
+                            .query(&[("file", "bar"), ("signature", &sig_hex)]);
                         let start = Instant::now();
                         let result = request.send()?;
                         let elapsed = start.elapsed();
@@ -891,7 +892,7 @@ mod tests {
                         }
                     } else {
                         best_time = Some(running_time);
-                            best_byte = Some(guess);
+                        best_byte = Some(guess);
                     }
                 }
                 guessed_sig[idx] = best_byte.unwrap();
@@ -921,7 +922,7 @@ mod tests {
                     for _ in 0..TRIALS {
                         let request = client
                             .get(&base_url)
-                            .query(&[("file", "bar"), ("signature", &sig_hex)]);      
+                            .query(&[("file", "bar"), ("signature", &sig_hex)]);
                         let start = Instant::now();
                         let result = request.send()?;
                         let elapsed = start.elapsed();
@@ -939,7 +940,7 @@ mod tests {
                         }
                     } else {
                         best_time = Some(running_time);
-                            best_byte = Some(guess);
+                        best_byte = Some(guess);
                     }
                 }
                 guessed_sig[idx] = best_byte.unwrap();
