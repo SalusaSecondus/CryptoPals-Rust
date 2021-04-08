@@ -792,10 +792,11 @@ mod tests {
     }
 
     mod set4 {
-        use anyhow::Result;
+        use anyhow::{bail, Result};
 
         use crate::{file_to_string, oracles};
-        use oracles::{challenge31, Challenge25Oracle, Challenge26Oracle, Set2Oracle};
+        use oracles::{Challenge25Oracle, Challenge26Oracle, Set2Oracle, challenge3x};
+        use std::time::{Duration, Instant};
 
         #[test]
         fn challenge_25() -> Result<()> {
@@ -852,22 +853,98 @@ mod tests {
         }
 
         #[test]
+        #[ignore = "slow"]
         fn challenge_31() -> Result<()> {
-            let mut oracle = challenge31();
-            let address = oracle.get_server_addr();
-            println!("Address: {:?}", address);
-            let base_url = oracle.get_base_url();
-            println!("Base address: {}", base_url);
-            let client = reqwest::blocking::Client::new();
-            let request = client
-                .get(base_url)
-                .query(&[("file", "bar"), ("signature", "0a0b0c0d0e")]);
-            let result = request.send()?;
-            println!("Result {:?}", result);
-            println!("Result {:?}", result.text());
-            oracle.stop();
+            const SIG_LEN: usize = 20;
+            const TRIALS: usize = 1;
+            let mut guessed_sig = [0u8; SIG_LEN];
 
-            Ok(())
+            let oracle = challenge3x(500);
+            let base_url = oracle.get_base_url();
+            let client = reqwest::blocking::Client::new();
+            for idx in 0..guessed_sig.len() {
+                let mut best_time = None;
+                let mut best_byte = None;
+
+                for guess in 0..=255 {
+                    let mut running_time = Duration::from_millis(0);
+                    guessed_sig[idx] = guess;
+                    let sig_hex = hex::encode(&guessed_sig);
+                    println!("Guessing: {}", sig_hex);
+                    for _ in 0..TRIALS {
+                        let request = client
+                            .get(&base_url)
+                            .query(&[("file", "bar"), ("signature", &sig_hex)]);      
+                        let start = Instant::now();
+                        let result = request.send()?;
+                        let elapsed = start.elapsed();
+                        running_time += elapsed;
+                        if result.status().is_success() {
+                            println!("Found signature for 'bar': {}", sig_hex);
+                            return Ok(());
+                        }
+                    }
+                    if let Some(old_best) = best_time {
+                        if old_best < running_time {
+                            best_time = Some(running_time);
+                            best_byte = Some(guess);
+                        }
+                    } else {
+                        best_time = Some(running_time);
+                            best_byte = Some(guess);
+                    }
+                }
+                guessed_sig[idx] = best_byte.unwrap();
+            }
+            bail!("Failed to find valid signature");
+        }
+
+        #[test]
+        #[ignore = "slow"]
+        fn challenge_32() -> Result<()> {
+            const SIG_LEN: usize = 20;
+            const TRIALS: usize = 6;
+            let mut guessed_sig = [0u8; SIG_LEN];
+
+            let oracle = challenge3x(1);
+            let base_url = oracle.get_base_url();
+            let client = reqwest::blocking::Client::new();
+            for idx in 0..guessed_sig.len() {
+                let mut best_time = None;
+                let mut best_byte = None;
+
+                for guess in 0..=255 {
+                    let mut running_time = Duration::from_millis(0);
+                    guessed_sig[idx] = guess;
+                    let sig_hex = hex::encode(&guessed_sig);
+                    print!("Guessing: {}", sig_hex);
+                    for _ in 0..TRIALS {
+                        let request = client
+                            .get(&base_url)
+                            .query(&[("file", "bar"), ("signature", &sig_hex)]);      
+                        let start = Instant::now();
+                        let result = request.send()?;
+                        let elapsed = start.elapsed();
+                        running_time += elapsed;
+                        if result.status().is_success() {
+                            println!("Found signature for 'bar': {}", sig_hex);
+                            return Ok(());
+                        }
+                    }
+                    println!(" (Elapsed {}ms)", running_time.as_millis());
+                    if let Some(old_best) = best_time {
+                        if old_best < running_time {
+                            best_time = Some(running_time);
+                            best_byte = Some(guess);
+                        }
+                    } else {
+                        best_time = Some(running_time);
+                            best_byte = Some(guess);
+                    }
+                }
+                guessed_sig[idx] = best_byte.unwrap();
+            }
+            bail!("Failed to find valid signature");
         }
     }
 }

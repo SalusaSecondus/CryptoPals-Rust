@@ -594,7 +594,7 @@ fn parse_query_params(url: &str) -> Result<HashMap<String, String>> {
     Set2Oracle::parse_kv(query_part, '&')
 }
 
-pub fn challenge31() -> OracleServer<impl OracleServerHandler> {
+pub fn challenge3x(millis: u64) -> OracleServer<impl OracleServerHandler> {
     let mut key = [0u8; 20];
     OsRng.fill_bytes(&mut key[..]);
     let key = key;
@@ -612,7 +612,7 @@ pub fn challenge31() -> OracleServer<impl OracleServerHandler> {
             bail!("Bad signature");
         }
         for (a, b) in expected_sig.iter().zip(sig.iter()) {
-            sleep(Duration::from_millis(500));
+            sleep(Duration::from_millis(millis));
             ensure!(a == b, "Bad signature")
         }
         Ok("Good Signature".to_string())
