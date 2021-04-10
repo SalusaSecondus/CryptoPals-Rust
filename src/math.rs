@@ -1,10 +1,13 @@
 use lazy_static::lazy_static;
 use num_bigint::{BigUint, RandBigInt};
 use num_traits::{identities::Zero, One};
-use rand_core::OsRng;
 use rand::RngCore;
+use rand_core::OsRng;
 
-use crate::{aes::AesKey, digest::{Digest, Sha1}};
+use crate::{
+    aes::AesKey,
+    digest::{Digest, Sha1},
+};
 
 #[derive(Clone)]
 pub struct FieldP {
@@ -49,24 +52,42 @@ struct Challenge34Actor {
     me_public: BigUint,
     field: FieldP,
     s: Option<AesKey>,
-    msg: Option<Vec<u8>>
+    msg: Option<Vec<u8>>,
 }
 
 impl Challenge34Actor {
     fn new_a() -> Self {
-        let field = challenge_33_params().clone();
+        Self::new_a_from_field(challenge_33_params().clone())
+    }
+
+    fn new_a_from_field(field: FieldP) -> Self {
         let me = rand_bigint(&field.p);
         let me_public = mod_exp(&field.g, &me, &field.p);
-        Self {field, me, me_public, s: None, msg: None}
+        Self {
+            field,
+            me,
+            me_public,
+            s: None,
+            msg: None,
+        }
     }
 
     fn new_b(p: &BigUint, g: &BigUint, other_public: &BigUint) -> Self {
-        let field = FieldP {p: p.clone(), g: g.clone()};
+        let field = FieldP {
+            p: p.clone(),
+            g: g.clone(),
+        };
         let me = rand_bigint(&field.p);
         let me_public = mod_exp(&field.g, &me, &field.p);
         let s = Self::derive_key(&mod_exp(other_public, &me, &field.p));
         let s = Some(s);
-        Self {field, me, me_public, s, msg: None}
+        Self {
+            field,
+            me,
+            me_public,
+            s,
+            msg: None,
+        }
     }
 
     fn update_other(&mut self, other_public: &BigUint) -> Vec<u8> {
@@ -81,7 +102,7 @@ impl Challenge34Actor {
         let ciphertext = s.encrypt_cbc(&iv, &message).unwrap();
         self.msg = Some(message);
         iv.extend(ciphertext.iter());
-        iv    
+        iv
     }
 
     fn echo(&mut self, ciphertext: &[u8]) -> Vec<u8> {
@@ -95,7 +116,7 @@ impl Challenge34Actor {
         let ciphertext = s.encrypt_cbc(&iv, &message).unwrap();
         self.msg = Some(message);
         iv.extend(ciphertext.iter());
-        iv    
+        iv
     }
 
     fn hear_echo(&self, ciphertext: &[u8]) {
@@ -180,10 +201,11 @@ mod tests {
         let echo = b.echo(&ciphertext);
         assert!(ciphertext != echo);
         a.hear_echo(&echo);
-    
+
         // Actual challenge with MitM
         let mut a = Challenge34Actor::new_a();
-        let (_valid_a, valid_g, valid_p) = (a.me_public.clone(), a.field.g.clone(), a.field.p.clone());
+        let (_valid_a, valid_g, valid_p) =
+            (a.me_public.clone(), a.field.g.clone(), a.field.p.clone());
         let mut b = Challenge34Actor::new_b(&valid_p, &valid_g, &valid_p);
         let _valid_b = &b.me_public;
         let ciphertext = a.update_other(&valid_p);
@@ -193,7 +215,7 @@ mod tests {
         // Derive key based on known values
         let key = Challenge34Actor::derive_key(&BigUint::zero());
         let message = key.decrypt_cbc(&ciphertext[..16], &ciphertext[16..])?;
-        let message2 = key.decrypt_cbc(&ciphertext[..16], &ciphertext[16..])?;
+        let message2 = key.decrypt_cbc(&echo[..16], &echo[16..])?;
         assert_eq!(message, message2);
         a.assert_msg(&message);
         b.assert_msg(&message);
@@ -201,4 +223,80 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn challenge_35() -> Result<()> {
+        // Prove that this works
+        let mut a = Challenge34Actor::new_a();
+        let mut b = Challenge34Actor::new_b(&a.field.p, &a.field.g, &a.me_public);
+        let ciphertext = a.update_other(&b.me_public);
+        let echo = b.echo(&ciphertext);
+        assert!(ciphertext != echo);
+        a.hear_echo(&echo);
+
+        // Actual challenge with MitM, g=1
+        let mut field = challenge_33_params().clone();
+        field.g = BigUint::one();
+        let mut a = Challenge34Actor::new_a_from_field(field);
+        let mut b = Challenge34Actor::new_b(&a.field.p, &a.field.g, &a.me_public);
+        let ciphertext = a.update_other(&b.me_public);
+        let echo = b.echo(&ciphertext);
+        assert!(ciphertext != echo);
+        a.hear_echo(&echo);
+        // Derive key based on known values
+        let key = Challenge34Actor::derive_key(&BigUint::one());
+        let message = key.decrypt_cbc(&ciphertext[..16], &ciphertext[16..])?;
+        let message2 = key.decrypt_cbc(&echo[..16], &echo[16..])?;
+        assert_eq!(message, message2);
+        a.assert_msg(&message);
+        b.assert_msg(&message);
+
+        // Actual challenge with MitM, g=p
+        let mut field = challenge_33_params().clone();
+        field.g = field.p.clone();
+        let mut a = Challenge34Actor::new_a_from_field(field);
+        let mut b = Challenge34Actor::new_b(&a.field.p, &a.field.g, &a.me_public);
+        let ciphertext = a.update_other(&b.me_public);
+        let echo = b.echo(&ciphertext);
+        assert!(ciphertext != echo);
+        a.hear_echo(&echo);
+        // Derive key based on known values
+        let key = Challenge34Actor::derive_key(&BigUint::zero());
+        let message = key.decrypt_cbc(&ciphertext[..16], &ciphertext[16..])?;
+        let message2 = key.decrypt_cbc(&echo[..16], &echo[16..])?;
+        assert_eq!(message, message2);
+        a.assert_msg(&message);
+        b.assert_msg(&message);
+
+        // Actual challenge with MitM, g=p
+        for _ in 0..5 {
+            let mut field = challenge_33_params().clone();
+            field.g = &field.p - 1u32;
+            let mut a = Challenge34Actor::new_a_from_field(field);
+            let mut b = Challenge34Actor::new_b(&a.field.p, &a.field.g, &a.me_public);
+            let ciphertext = a.update_other(&b.me_public);
+            let echo = b.echo(&ciphertext);
+            assert!(ciphertext != echo);
+            a.hear_echo(&echo);
+            // Derive key based on known values
+            // The key is either based on one or p-1, but we aren't sure which
+            let mut key = Challenge34Actor::derive_key(&BigUint::one());
+
+            let mut message = key.decrypt_cbc(&ciphertext[..16], &ciphertext[16..])?;
+            let mut message2 = key.decrypt_cbc(&echo[..16], &echo[16..])?;
+            if message != message2 {
+                println!("Key: -1");
+                key = Challenge34Actor::derive_key(&(&a.field.p - 1u32));
+                message = key.decrypt_cbc(&ciphertext[..16], &ciphertext[16..])?;
+                message2 = key.decrypt_cbc(&echo[..16], &echo[16..])?;
+            } else {
+                println!("Key: 1");
+            }
+
+            assert_eq!(message, message2);
+            a.assert_msg(&message);
+            b.assert_msg(&message);
+        }
+
+        Ok(())
+    }
 }
