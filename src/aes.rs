@@ -56,6 +56,7 @@ lazy_static! {
     static ref RC: [u8; 11] = [0, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36];
 }
 
+#[derive(Copy, Clone)]
 pub struct AesKey {
     round_keys: RoundKeys,
     rounds: usize,

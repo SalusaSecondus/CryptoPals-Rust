@@ -2,7 +2,11 @@ use lazy_static::lazy_static;
 use num_bigint::{BigUint, RandBigInt};
 use num_traits::{identities::Zero, One};
 use rand_core::OsRng;
+use rand::RngCore;
 
+use crate::{aes::AesKey, digest::{Digest, Sha1}};
+
+#[derive(Clone)]
 pub struct FieldP {
     pub g: BigUint,
     pub p: BigUint,
@@ -40,9 +44,84 @@ pub fn mod_exp(base: &BigUint, exp: &BigUint, modulo: &BigUint) -> BigUint {
     }
 }
 
+struct Challenge34Actor {
+    me: BigUint,
+    me_public: BigUint,
+    field: FieldP,
+    s: Option<AesKey>,
+    msg: Option<Vec<u8>>
+}
+
+impl Challenge34Actor {
+    fn new_a() -> Self {
+        let field = challenge_33_params().clone();
+        let me = rand_bigint(&field.p);
+        let me_public = mod_exp(&field.g, &me, &field.p);
+        Self {field, me, me_public, s: None, msg: None}
+    }
+
+    fn new_b(p: &BigUint, g: &BigUint, other_public: &BigUint) -> Self {
+        let field = FieldP {p: p.clone(), g: g.clone()};
+        let me = rand_bigint(&field.p);
+        let me_public = mod_exp(&field.g, &me, &field.p);
+        let s = Self::derive_key(&mod_exp(other_public, &me, &field.p));
+        let s = Some(s);
+        Self {field, me, me_public, s, msg: None}
+    }
+
+    fn update_other(&mut self, other_public: &BigUint) -> Vec<u8> {
+        let s = Self::derive_key(&mod_exp(other_public, &self.me, &self.field.p));
+        self.s = Some(s);
+        let mut message = vec![0u8; 32];
+        let mut rng = OsRng;
+        rng.fill_bytes(&mut message);
+        let mut iv = vec![0u8; 16];
+        rng.fill_bytes(&mut iv);
+
+        let ciphertext = s.encrypt_cbc(&iv, &message).unwrap();
+        self.msg = Some(message);
+        iv.extend(ciphertext.iter());
+        iv    
+    }
+
+    fn echo(&mut self, ciphertext: &[u8]) -> Vec<u8> {
+        let s = self.s.unwrap();
+        let message = s.decrypt_cbc(&ciphertext[..16], &ciphertext[16..]).unwrap();
+
+        let mut rng = OsRng;
+        let mut iv = vec![0u8; 16];
+        rng.fill_bytes(&mut iv);
+
+        let ciphertext = s.encrypt_cbc(&iv, &message).unwrap();
+        self.msg = Some(message);
+        iv.extend(ciphertext.iter());
+        iv    
+    }
+
+    fn hear_echo(&self, ciphertext: &[u8]) {
+        let s = self.s.unwrap();
+        let message = s.decrypt_cbc(&ciphertext[..16], &ciphertext[16..]).unwrap();
+        assert_eq!(self.msg, Some(message));
+    }
+
+    fn assert_msg(&self, msg: &[u8]) {
+        let foo = &self.msg;
+        let bar = foo.as_deref();
+        assert_eq!(bar.unwrap(), msg);
+    }
+
+    fn derive_key(s: &BigUint) -> AesKey {
+        let mut hash = Sha1::default();
+        hash.update(&s.to_bytes_be());
+        let raw_key = &hash.digest()[..16];
+        AesKey::new(raw_key).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
 
     #[test]
     fn exp_test() {
@@ -91,4 +170,35 @@ mod tests {
         println!("S = {}", aS);
         assert_eq!(aS, bS);
     }
+
+    #[test]
+    fn challenge_34() -> Result<()> {
+        // Prove that this works
+        let mut a = Challenge34Actor::new_a();
+        let mut b = Challenge34Actor::new_b(&a.field.p, &a.field.g, &a.me_public);
+        let ciphertext = a.update_other(&b.me_public);
+        let echo = b.echo(&ciphertext);
+        assert!(ciphertext != echo);
+        a.hear_echo(&echo);
+    
+        // Actual challenge with MitM
+        let mut a = Challenge34Actor::new_a();
+        let (_valid_a, valid_g, valid_p) = (a.me_public.clone(), a.field.g.clone(), a.field.p.clone());
+        let mut b = Challenge34Actor::new_b(&valid_p, &valid_g, &valid_p);
+        let _valid_b = &b.me_public;
+        let ciphertext = a.update_other(&valid_p);
+        let echo = b.echo(&ciphertext);
+        assert!(ciphertext != echo);
+        a.hear_echo(&echo);
+        // Derive key based on known values
+        let key = Challenge34Actor::derive_key(&BigUint::zero());
+        let message = key.decrypt_cbc(&ciphertext[..16], &ciphertext[16..])?;
+        let message2 = key.decrypt_cbc(&ciphertext[..16], &ciphertext[16..])?;
+        assert_eq!(message, message2);
+        a.assert_msg(&message);
+        b.assert_msg(&message);
+
+        Ok(())
+    }
+
 }
