@@ -16,6 +16,18 @@ pub struct Sha1 {
     buffer: Vec<u8>,
 }
 
+pub trait DigestOneShot {
+    fn oneshot_digest(input: &[u8]) -> Vec<u8>;
+}
+
+impl<T: Digest + Default> DigestOneShot for T {
+    fn oneshot_digest(input: &[u8]) -> Vec<u8> {
+        let mut digest = T::default();
+        digest.update(input);
+        digest.digest()
+    }
+}
+
 impl Default for Sha1 {
     fn default() -> Self {
         let mut result = Sha1 {
@@ -659,6 +671,10 @@ mod tests {
             hash.update(test.0);
             assert_eq!(test.1, to_hex(hash.digest()));
         }
+
+        for test in &vectors {
+            assert_eq!(test.1, to_hex(Sha1::oneshot_digest(test.0)));
+        }
     }
 
     #[test]
@@ -682,6 +698,10 @@ mod tests {
             hash.update(test.0);
             assert_eq!(test.1, to_hex(hash.digest()));
         }
+
+        for test in &vectors {
+            assert_eq!(test.1, to_hex(Sha256::oneshot_digest(test.0)));
+        }
     }
 
     #[test]
@@ -702,6 +722,10 @@ mod tests {
         for test in &vectors {
             hash.update(test.0);
             assert_eq!(test.1, to_hex(hash.digest()));
+        }
+
+        for test in &vectors {
+            assert_eq!(test.1, to_hex(MD4::oneshot_digest(test.0)));
         }
     }
 
