@@ -156,10 +156,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use num_traits::Zero;
+    use crate::digest::DigestOneShot;
+
     use super::*;
 
     #[test]
-    fn srp_smoke() -> Result<()> {
+    fn challenge_36() -> Result<()> {
         let email = "anonymous@example.com";
         let good_password = "Let me in!";
         let bad_password = "Friend";
@@ -183,6 +186,30 @@ mod tests {
                 let state = server.start_login(email, client.get_a())?;
                 let response = client.process_params(&state.s, &state.b_pub, bad_password);
                 assert!(!server.login(state, response));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn challenge_37() -> Result<()> {
+        let email = "anonymous@example.com";
+        let good_password = "Let me in!";
+
+        for _ in 1..3 {
+            let mut server = SrpServer::new(SRP_STANDARD.clone());
+            let verifier = gen_srp_verifier(&SRP_STANDARD, good_password);
+            server.save_verifier(email, verifier);
+
+
+            let evil_a = [BigUint::zero(), SRP_STANDARD.n.clone(), &SRP_STANDARD.n + &SRP_STANDARD.n];
+            for a_pub in &evil_a {
+                let state = server.start_login(email, a_pub)?;
+                let key = Sha256::oneshot_digest(&BigUint::zero().to_bytes_be());
+                let mut hmac = Hmac::<Sha256>::init_new(&key);
+                hmac.update(&state.s.to_bytes_be());
+                let response = hmac.digest();
+                assert!(server.login(state, response));
             }
         }
         Ok(())
