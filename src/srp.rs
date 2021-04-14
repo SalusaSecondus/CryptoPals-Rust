@@ -156,8 +156,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use num_traits::Zero;
     use crate::digest::DigestOneShot;
+    use num_traits::Zero;
 
     use super::*;
 
@@ -201,8 +201,11 @@ mod tests {
             let verifier = gen_srp_verifier(&SRP_STANDARD, good_password);
             server.save_verifier(email, verifier);
 
-
-            let evil_a = [BigUint::zero(), SRP_STANDARD.n.clone(), &SRP_STANDARD.n + &SRP_STANDARD.n];
+            let evil_a = [
+                BigUint::zero(),
+                SRP_STANDARD.n.clone(),
+                &SRP_STANDARD.n + &SRP_STANDARD.n,
+            ];
             for a_pub in &evil_a {
                 let state = server.start_login(email, a_pub)?;
                 let key = Sha256::oneshot_digest(&BigUint::zero().to_bytes_be());

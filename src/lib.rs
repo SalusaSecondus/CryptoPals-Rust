@@ -2,6 +2,8 @@
 
 use anyhow::{Context, Result};
 use lazy_static::lazy_static;
+use rand::seq::IteratorRandom;
+use rand_core::OsRng;
 use std::{
     collections::HashMap,
     fs::File,
@@ -22,6 +24,14 @@ fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
 }
 
 const FILE_BASE: &str = r"res\";
+
+pub fn random_word() -> Result<String> {
+    let input = File::open(FILE_BASE.to_owned() + "words.txt").context("Could not open file")?;
+    let reader = BufReader::new(input);
+    let mut rng = OsRng;
+    let lines = reader.lines();
+    Ok(lines.choose(&mut rng).context("No word present")??)
+}
 
 pub fn read_file(file_name: &str) -> Result<Lines<BufReader<File>>> {
     let input = File::open(FILE_BASE.to_owned() + file_name).context("Could not open file")?;
@@ -274,6 +284,14 @@ mod tests {
     use oracles::Set2Oracle;
 
     use super::*;
+
+    #[test]
+    fn words() -> Result<()> {
+        for _ in 0..10 {
+            println!("Word: {}", random_word()?);
+        }
+        Ok(())
+    }
 
     #[test]
     fn hamming() {
