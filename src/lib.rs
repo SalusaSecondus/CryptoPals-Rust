@@ -26,10 +26,14 @@ fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
 const FILE_BASE: &str = r"res\";
 
 pub fn random_word() -> Result<String> {
+    random_word_limit(usize::MAX)
+}
+
+pub fn random_word_limit(limit: usize) -> Result<String> {
     let input = File::open(FILE_BASE.to_owned() + "words.txt").context("Could not open file")?;
     let reader = BufReader::new(input);
     let mut rng = OsRng;
-    let lines = reader.lines();
+    let lines = reader.lines().take(limit);
     Ok(lines.choose(&mut rng).context("No word present")??)
 }
 
