@@ -17,6 +17,7 @@ mod math;
 mod oracles;
 mod padding;
 mod prng;
+mod rsa;
 mod srp;
 
 fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
