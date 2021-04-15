@@ -52,7 +52,7 @@ pub fn gcd(a: &BigUint, b: &BigUint) -> (BigUint, BigInt, BigInt) {
 }
 
 pub fn inv_mod(base: &BigUint, modulo: &BigUint) -> Result<BigUint> {
-    ensure!(modulo > base, "Modulo must be greater than base");
+    // ensure!(modulo > base, "Modulo must be greater than base");
     let (gcd, x, _) = gcd(base, modulo);
     ensure!(gcd.is_one(), "Modulo and base are not relatively prime");
     match x.sign() {
