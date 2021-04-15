@@ -391,7 +391,7 @@ mod tests {
                 return Ok(());
             }
             // if count % 10 == 0 {
-                println!("Work({}): {}", count, word);
+            println!("Work({}): {}", count, word);
             // }
             count += 1;
         }
