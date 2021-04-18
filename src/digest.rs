@@ -1,5 +1,8 @@
 use std::convert::TryInto;
 
+use asn1::ObjectIdentifier;
+use lazy_static::lazy_static;
+
 pub trait Digest: Clone {
     fn reset(&mut self);
     fn update(&mut self, input: &[u8]);
@@ -7,6 +10,7 @@ pub trait Digest: Clone {
 
     fn digest_size() -> usize;
     fn block_size() -> usize;
+    fn oid() -> Option<&'static ObjectIdentifier<'static>>;
 }
 
 #[derive(Clone)]
@@ -169,6 +173,14 @@ impl Digest for Sha1 {
     fn block_size() -> usize {
         64
     }
+
+    fn oid() -> Option<&'static ObjectIdentifier<'static>> {
+        lazy_static! {
+            static ref OID: ObjectIdentifier<'static> =
+                ObjectIdentifier::from_string("1.3.14.3.2.26").unwrap();
+        };
+        Some(&OID)
+    }
 }
 
 #[derive(Clone)]
@@ -322,6 +334,14 @@ impl Digest for Sha256 {
     fn block_size() -> usize {
         64
     }
+
+    fn oid() -> Option<&'static ObjectIdentifier<'static>> {
+        lazy_static! {
+            static ref OID: ObjectIdentifier<'static> =
+                ObjectIdentifier::from_string("2.16.840.1.101.3.4.2.1").unwrap();
+        };
+        Some(&OID)
+    }
 }
 
 #[derive(Clone)]
@@ -363,6 +383,10 @@ impl<T: Digest> Digest for PrefixMac<T> {
 
     fn block_size() -> usize {
         T::block_size()
+    }
+
+    fn oid() -> Option<&'static ObjectIdentifier<'static>> {
+        None
     }
 }
 
@@ -585,6 +609,14 @@ impl Digest for MD4 {
     fn block_size() -> usize {
         64
     }
+
+    fn oid() -> Option<&'static ObjectIdentifier<'static>> {
+        lazy_static! {
+            static ref OID: ObjectIdentifier<'static> =
+                ObjectIdentifier::from_string("1.2.840.113549.2.4").unwrap();
+        };
+        Some(&OID)
+    }
 }
 
 #[derive(Clone)]
@@ -642,6 +674,10 @@ impl<T: Digest + Default> Digest for Hmac<T> {
 
     fn block_size() -> usize {
         T::block_size()
+    }
+
+    fn oid() -> Option<&'static ObjectIdentifier<'static>> {
+        None
     }
 }
 

@@ -1,9 +1,14 @@
-use anyhow::Context;
+use anyhow::{ensure, Context, Result};
+use asn1::ObjectIdentifier;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::One;
 
-use crate::math::{inv_mod, mod_exp, rand_prime};
+use crate::padding::Padding;
+use crate::{
+    digest::{Digest, DigestOneShot},
+    math::{inv_mod, mod_exp, rand_prime},
+};
 
 lazy_static! {
     static ref E3: BigUint = 3u32.into();
@@ -77,10 +82,86 @@ fn rsa_private_raw<R: RsaPrivateKey>(key: &R, data: &BigUint) -> BigUint {
     mod_exp(data, key.priv_exp(), key.modulus())
 }
 
+pub fn rsa_pkcs1_15_sign<H, K>(key: &K, data: &[u8]) -> Result<Vec<u8>>
+where
+    K: RsaPrivateKey,
+    H: Digest + DigestOneShot,
+{
+    let keylength = key.modulus().bits();
+
+    let asn1_struct = rsa_pkcs1_15_generate_asn1_struct::<H>(data)?;
+    let padded = Padding::Pkcs1PaddingSigning(keylength).pad(&asn1_struct)?;
+    let signed = rsa_private_raw(key, &BigUint::from_bytes_be(&padded));
+    Ok(signed.to_bytes_be())
+}
+
+fn rsa_pkcs1_15_generate_asn1_struct<H>(data: &[u8]) -> Result<Vec<u8>>
+where
+    H: Digest + DigestOneShot,
+{
+    let oid = H::oid().context("No OID registered")?;
+    let digest = H::oneshot_digest(&data);
+
+    Ok(asn1::write(|w| {
+        //    DigestInfo ::= SEQUENCE {
+        //      digestAlgorithm DigestAlgorithmIdentifier,
+        //      digest Digest }
+        w.write_element_with_type::<asn1::Sequence>(&|w| {
+            // AlgorithmIdentifier
+            // DigestAlgorithmIdentifier ::= AlgorithmIdentifier
+            // AlgorithmIdentifier ::= SEQUENCE {
+            //   OID
+            //   NULL
+            // }
+            w.write_element_with_type::<asn1::Sequence>(&|w| {
+                w.write_element_with_type::<ObjectIdentifier>(oid.to_owned());
+                w.write_element_with_type::<()>(());
+            });
+            w.write_element_with_type::<&[u8]>(&digest);
+        });
+    }))
+}
+
+fn trim_leading_zeros(data: &[u8]) -> &[u8] {
+    let mut idx = 0;
+    while data[idx] == 0 {
+        idx += 1;
+    }
+    &data[idx..]
+}
+
+pub fn rsa_pkcs1_15_verify<H, K>(key: &K, data: &[u8], signature: &[u8], strict: bool) -> Result<()>
+where
+    K: RsaKey,
+    H: Digest + DigestOneShot,
+{
+    let expected_struct = rsa_pkcs1_15_generate_asn1_struct::<H>(data)?;
+    let keylength = key.modulus().bits();
+    let actual_padded = rsa_public_raw(key, &BigUint::from_bytes_be(signature)).to_bytes_be();
+    let actual_struct = Padding::Pkcs1PaddingSigning(keylength).unpad(&actual_padded)?;
+    let actual_struct = trim_leading_zeros(&actual_struct);
+    // Generate rather than parse
+    if strict {
+        ensure!(&expected_struct == actual_struct, "Invalid signature");
+    } else {
+        // This section is horribly stupid, but it is annoying to incorrectly pass ASN.1 and leave a suffix,
+        // so I fake it by just comparing the prefixes.
+        ensure!(
+            actual_struct.len() >= expected_struct.len(),
+            "Structure too short"
+        );
+        let prefix = &actual_struct[..expected_struct.len()];
+        ensure!(expected_struct == prefix, "Invalid signature");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::digest::Sha1;
     use anyhow::Result;
     use num_bigint::RandBigInt;
+    use rand::RngCore;
     use rand_core::OsRng;
 
     use super::*;
@@ -145,5 +226,62 @@ mod tests {
         assert_eq!(target_plaintext, result);
 
         Ok(())
+    }
+
+    #[test]
+    fn challenge_41() -> Result<()> {
+        let (pub_key, priv_key) = gen_rsa(512, &E3);
+        println!("Modulus: {}", pub_key.modulus());
+        let target_plaintext = OsRng.gen_biguint(300);
+
+        let victim_ciphertext = rsa_public_raw(&pub_key, &target_plaintext);
+
+        let s: BigUint = 2u32.into();
+        let s_e = mod_exp(&s, pub_key.pub_exp(), pub_key.modulus());
+        let s_inv = inv_mod(&s, pub_key.modulus())?;
+
+        let tampered = (&victim_ciphertext * &s_e) % pub_key.modulus();
+
+        // Oracle call
+        let tampered_plaintext = rsa_private_raw(&priv_key, &tampered);
+        // End oracle
+
+        let decrypted = (&tampered_plaintext * s_inv) % pub_key.modulus();
+
+        assert_eq!(target_plaintext, decrypted);
+
+        Ok(())
+    }
+
+    #[test]
+    fn rsa_sig_smoke() -> Result<()> {
+        let mut msg = [0u8; 32];
+        OsRng.fill_bytes(&mut msg);
+        let msg = msg;
+
+        let (pub_key, priv_key) = gen_rsa(1024, &E3);
+        let signature = rsa_pkcs1_15_sign::<Sha1, _>(&priv_key, &msg)?;
+        assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, true).is_ok());
+        assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, false).is_ok());
+
+        let mut bad_msg = msg.clone();
+        bad_msg[0] ^= 0x14;
+        assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &bad_msg, &signature, true).is_err());
+        assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &bad_msg, &signature, false).is_err());
+
+        let padded = rsa_public_raw(&pub_key, &BigUint::from_bytes_be(&signature)).to_bytes_be();
+        // println!("Padded: {}", hex::encode(&padded));
+        let unpadded = Padding::Pkcs1PaddingSigning(pub_key.modulus().bits()).unpad(&padded)?;
+        // println!("Raw signature: {}", hex::encode(&unpadded));
+
+        let mut extended_signature = unpadded.clone();
+        extended_signature.resize(extended_signature.len() + 2, 0);
+        let padded = Padding::Pkcs1PaddingSigning(pub_key.modulus().bits())
+            .pad(&extended_signature)
+            .unwrap();
+        // println!("Padded: {}", hex::encode(&padded));
+        let signature = rsa_private_raw(&priv_key, &BigUint::from_bytes_be(&padded)).to_bytes_be();
+        assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, true).is_err());
+        rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, false)
     }
 }
