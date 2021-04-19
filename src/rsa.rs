@@ -49,12 +49,16 @@ impl RsaPrivateKey for RsaKeyImpl {
 }
 
 pub fn gen_rsa(bit_size: u64, pub_exp: &BigUint) -> (impl RsaKey, impl RsaPrivateKey) {
+    // println!("Generating first prime");
+    let p = rand_prime(bit_size / 2);
     loop {
-        let p = rand_prime(bit_size / 2);
+        // println!("Generating second prime");
         let q = rand_prime(bit_size / 2);
         let totient = (&p - BigUint::one()) * (&q - BigUint::one());
+        
         let inverse = inv_mod(pub_exp, &totient);
         if inverse.is_err() {
+            // println!("Retrying due to bad inverse: {:?}", inverse);
             continue;
         }
         let inverse = inverse.unwrap();
@@ -146,11 +150,14 @@ where
     } else {
         // This section is horribly stupid, but it is annoying to incorrectly pass ASN.1 and leave a suffix,
         // so I fake it by just comparing the prefixes.
+
         ensure!(
             actual_struct.len() >= expected_struct.len(),
             "Structure too short"
         );
         let prefix = &actual_struct[..expected_struct.len()];
+        println!("Expected: {}", hex::encode(&expected_struct));
+        println!("Actual:   {}", hex::encode(&actual_struct));
         ensure!(expected_struct == prefix, "Invalid signature");
     }
     Ok(())
@@ -281,6 +288,27 @@ mod tests {
             .unwrap();
         // println!("Padded: {}", hex::encode(&padded));
         let signature = rsa_private_raw(&priv_key, &BigUint::from_bytes_be(&padded)).to_bytes_be();
+        assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, true).is_err());
+        rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, false)
+    }
+
+    
+    #[test]
+    fn challenge_42() -> Result<()> {
+        let mut msg = [0u8; 32];
+        OsRng.fill_bytes(&mut msg);
+        let msg = msg;
+
+        println!("Generating key");
+        let (pub_key, _) = gen_rsa(2048, &E3);
+        let mut asn1_struct = rsa_pkcs1_15_generate_asn1_struct::<Sha1>(&msg)?;
+        let new_len = (2048 / 8) - 12;
+        asn1_struct.resize(new_len, 0xff);
+        let unpadded = Padding::Pkcs1PaddingSigning(pub_key.modulus().bits()).pad(&asn1_struct)?;
+        println!("Calculating root");
+        let root: BigUint = BigUint::from_bytes_be(&unpadded).nth_root(3);
+        let signature = root.to_bytes_be();
+        println!("Verifying");
         assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, true).is_err());
         rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, false)
     }
