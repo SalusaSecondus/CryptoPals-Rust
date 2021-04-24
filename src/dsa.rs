@@ -100,7 +100,12 @@ where
     Ok(())
 }
 
-pub fn recover_private(params: &DsaParams, signature: &[BigUint; 2], digest: &[u8], k: &BigUint) -> Result<BigUint> {
+pub fn recover_private(
+    params: &DsaParams,
+    signature: &[BigUint; 2],
+    digest: &[u8],
+    k: &BigUint,
+) -> Result<BigUint> {
     let r = &signature[0];
     let s = &signature[1];
     let h = BigUint::from_bytes_be(digest) % &params.q;
@@ -113,6 +118,7 @@ pub fn recover_private(params: &DsaParams, signature: &[BigUint; 2], digest: &[u
 mod tests {
     use super::*;
     use crate::digest::Sha1;
+    use anyhow::Context;
     use rand::RngCore;
     use rand_core::OsRng;
 
@@ -141,13 +147,15 @@ mod tests {
         let public_key = keypair.public_key;
         println!("Public key = {:?}", public_key);
         let private_key = keypair.private_key;
-        let msg = 
-b"For those that envy a MC it can be hazardous to your health
+        let msg = b"For those that envy a MC it can be hazardous to your health
 So be friendly, a matter of life and death, just like a etch-a-sketch
 ";
         let digest = Sha1::oneshot_digest(msg);
         println!("digest: {}", hex::encode(&digest));
-        println!("digest: {}", BigUint::from_bytes_be(&digest).to_str_radix(16));
+        println!(
+            "digest: {}",
+            BigUint::from_bytes_be(&digest).to_str_radix(16)
+        );
         let sig = dsa_sign_explicit_k::<Sha1>(&DSA_PARAMS, &private_key.0, msg, &5073u32.into())?;
         // let sig = [
         //         BigUint::parse_bytes(b"548099063082341131477253921760299949438196259240", 10).unwrap(),
@@ -161,15 +169,20 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
 
         for k in 5070u32..5080 {
             // if k % 1000 == 0 {
-                println!("Testing k = {} < {}", k, 2u32 << 16);
+            println!("Testing k = {} < {}", k, 2u32 << 16);
             // }
             if let Ok(x) = recover_private(&DSA_PARAMS, &sig, &digest, &k.into()) {
                 // if k % 1000 == 0 {
-                    println!("Testing k = {}, x = {}", k, x.to_str_radix(16));
+                println!("Testing k = {}, x = {}", k, x.to_str_radix(16));
                 // }
                 let y = mod_exp(&DSA_PARAMS.g, &x, &DSA_PARAMS.p);
                 // if k % 1000 == 0 {
-                    println!("Testing k = {}, x = {}, y = {}", k, x.to_str_radix(16), y.to_str_radix(16));
+                println!(
+                    "Testing k = {}, x = {}, y = {}",
+                    k,
+                    x.to_str_radix(16),
+                    y.to_str_radix(16)
+                );
                 // }
                 if &y == &public_key.0 {
                     println!("Found k = {} and x = {}", k, x.to_str_radix(10));
@@ -184,20 +197,22 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
     #[test]
     pub fn challenge_43() -> Result<()> {
         let public_key = PublicKey(BigUint::parse_bytes(b"84ad4719d044495496a3201c8ff484feb45b962e7302e56a392aee4abab3e4bdebf2955b4736012f21a08084056b19bcd7fee56048e004e44984e2f411788efdc837a0d2e5abb7b555039fd243ac01f0fb2ed1dec568280ce678e931868d23eb095fde9d3779191b8c0299d6e07bbb283e6633451e535c45513b2d33c99ea17", 16).unwrap());
-        let msg = 
-b"For those that envy a MC it can be hazardous to your health
+        let msg = b"For those that envy a MC it can be hazardous to your health
 So be friendly, a matter of life and death, just like a etch-a-sketch
 ";
         let digest = Sha1::oneshot_digest(msg);
         println!("digest: {}", hex::encode(&digest));
-        println!("digest: {}", BigUint::from_bytes_be(&digest).to_str_radix(16));
+        println!(
+            "digest: {}",
+            BigUint::from_bytes_be(&digest).to_str_radix(16)
+        );
         let sig = [
-                BigUint::parse_bytes(b"548099063082341131477253921760299949438196259240", 10).unwrap(),
-                BigUint::parse_bytes(b"857042759984254168557880549501802188789837994940", 10).unwrap(),];
+            BigUint::parse_bytes(b"548099063082341131477253921760299949438196259240", 10).unwrap(),
+            BigUint::parse_bytes(b"857042759984254168557880549501802188789837994940", 10).unwrap(),
+        ];
         dsa_verify::<Sha1>(&DSA_PARAMS, &public_key, msg, &sig)?;
-        
-        // let mut y = BigUint::one();
-        for k in 16000u32..(2<<16) {
+
+        for k in 16000u32..(2 << 16) {
             if k % 1000 == 0 {
                 println!("Testing k = {} < {}", k, 2u32 << 16);
             }
@@ -207,7 +222,12 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
                 }
                 let y = mod_exp(&DSA_PARAMS.g, &x, &DSA_PARAMS.p);
                 if k % 1000 == 0 {
-                    println!("Testing k = {}, x = {}, y = {}", k, x.to_str_radix(16), y.to_str_radix(16));
+                    println!(
+                        "Testing k = {}, x = {}, y = {}",
+                        k,
+                        x.to_str_radix(16),
+                        y.to_str_radix(16)
+                    );
                 }
                 if &y == &public_key.0 {
                     println!("Found k = {} and x = {}", k, x.to_str_radix(10));
@@ -217,8 +237,84 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
                     return Ok(());
                 }
             }
-            // y = (y * &DSA_PARAMS.g) % &DSA_PARAMS.p;
         }
         bail!("Could not find k");
+    }
+
+    #[derive(Debug)]
+    struct Entry44 {
+        msg: String,
+        s: BigUint,
+        r: BigUint,
+        m: BigUint,
+    }
+
+    fn load_44_data() -> Result<Vec<Entry44>> {
+        let mut lines = crate::read_file("44.txt")?;
+        let mut result = vec![];
+        while let Some(line) = lines.next() {
+            let line = line?;
+            // msg
+            let msg = line
+                .splitn(2, ": ")
+                .last()
+                .context("Missing entry")?
+                .to_owned();
+            // s
+            let line = lines.next().context("Missing line")??;
+            let s = line
+                .splitn(2, ": ")
+                .last()
+                .context("Missing entry")?
+                .to_owned();
+            let s = BigUint::parse_bytes(&s.as_bytes(), 10).context("Bad number")?;
+            // r
+            let line = lines.next().context("Missing line")??;
+            let r = line
+                .splitn(2, ": ")
+                .last()
+                .context("Missing entry")?
+                .to_owned();
+            let r = BigUint::parse_bytes(&r.as_bytes(), 10).context("Bad number")?;
+            // m
+            let line = lines.next().context("Missing line")??;
+            let m = line
+                .splitn(2, ": ")
+                .last()
+                .context("Missing entry")?
+                .to_owned();
+            let m = BigUint::parse_bytes(&m.as_bytes(), 16).context("Bad number")?;
+            result.push(Entry44 { msg, s, r, m });
+        }
+
+        Ok(result)
+    }
+
+    #[test]
+    pub fn challenge_44() -> Result<()> {
+        let entries = load_44_data()?;
+        let public_key = PublicKey(BigUint::parse_bytes(b"2d026f4bf30195ede3a088da85e398ef869611d0f68f0713d51c9c1a3a26c95105d915e2d8cdf26d056b86b8a7b85519b1c23cc3ecdc6062650462e3063bd179c2a6581519f674a61f1d89a1fff27171ebc1b93d4dc57bceb7ae2430f98a6a4d83d8279ee65d71c1203d2c96d65ebbf7cce9d32971c3de5084cce04a2e147821", 16).unwrap());
+        for (e1_idx, e1) in entries.iter().enumerate() {
+            for e2 in entries.iter().skip(e1_idx + 1) {
+                let top = (&DSA_PARAMS.q + &e1.m - &e2.m) % &DSA_PARAMS.q;
+                let bottom = (&DSA_PARAMS.q + &e1.s - &e2.s) % &DSA_PARAMS.q;
+                let bottom = inv_mod(&bottom, &DSA_PARAMS.q)?;
+                let k = (top * bottom) % &DSA_PARAMS.q;
+                let digest = Sha1::oneshot_digest(&e1.msg.as_bytes());
+                if let Ok(x) =
+                    recover_private(&DSA_PARAMS, &[e1.r.clone(), e1.s.clone()], &digest, &k)
+                {
+                    let y = mod_exp(&DSA_PARAMS.g, &x, &DSA_PARAMS.p);
+                    if &y == &public_key.0 {
+                        println!("msg1: = {}\nmsg2: = {}", e1.msg, e2.msg);
+                        let key_digest = Sha1::oneshot_digest(&x.to_str_radix(16).as_bytes());
+                        let hex_digest = hex::encode(&key_digest);
+                        assert_eq!("ca8f6f7c66fa362d40760d135b763eb8527d3d52", hex_digest);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        bail!("Could not find match");
     }
 }
