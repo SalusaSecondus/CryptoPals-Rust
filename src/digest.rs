@@ -2,11 +2,15 @@ use std::convert::TryInto;
 
 use asn1::ObjectIdentifier;
 use lazy_static::lazy_static;
+use num_bigint::BigUint;
 
 pub trait Digest: Clone {
     fn reset(&mut self);
     fn update(&mut self, input: &[u8]);
     fn digest(&mut self) -> Vec<u8>;
+    fn digest_num(&mut self) -> BigUint {
+        BigUint::from_bytes_be(&self.digest())
+    }
 
     fn digest_size() -> usize;
     fn block_size() -> usize;
@@ -22,6 +26,9 @@ pub struct Sha1 {
 
 pub trait DigestOneShot {
     fn oneshot_digest(input: &[u8]) -> Vec<u8>;
+    fn oneshot_digest_num(input: &[u8]) -> BigUint {
+        BigUint::from_bytes_be(&Self::oneshot_digest(input))
+    }
 }
 
 impl<T: Digest + Default> DigestOneShot for T {

@@ -55,7 +55,7 @@ pub fn gen_rsa(bit_size: u64, pub_exp: &BigUint) -> (impl RsaKey, impl RsaPrivat
         // println!("Generating second prime");
         let q = rand_prime(bit_size / 2);
         let totient = (&p - BigUint::one()) * (&q - BigUint::one());
-        
+
         let inverse = inv_mod(pub_exp, &totient);
         if inverse.is_err() {
             // println!("Retrying due to bad inverse: {:?}", inverse);
@@ -292,7 +292,6 @@ mod tests {
         rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, false)
     }
 
-    
     #[test]
     fn challenge_42() -> Result<()> {
         let mut msg = [0u8; 32];

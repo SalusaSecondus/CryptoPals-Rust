@@ -13,12 +13,22 @@ use std::{
 
 mod aes;
 mod digest;
+mod dsa;
 mod math;
 mod oracles;
 mod padding;
 mod prng;
 mod rsa;
 mod srp;
+
+#[derive(Debug)]
+pub struct PublicKey<T>(pub T);
+pub struct PrivateKey<T>(pub T);
+
+pub struct KeyPair<P, S> {
+    pub public_key: PublicKey<P>,
+    pub private_key: PrivateKey<S>,
+}
 
 fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
     a.iter().zip(b.iter().cycle()).map(|(a, b)| a ^ b).collect()
