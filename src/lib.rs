@@ -8,6 +8,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader, Lines},
+    ops::Deref,
     usize, vec,
 };
 
@@ -22,8 +23,21 @@ mod rsa;
 mod srp;
 
 #[derive(Debug)]
-pub struct PublicKey<T>(pub T);
-pub struct PrivateKey<T>(pub T);
+pub struct PublicKey<T>(T);
+
+impl<T> Deref for PublicKey<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+pub struct PrivateKey<T>(T);
+impl<T> Deref for PrivateKey<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
 
 pub struct KeyPair<P, S> {
     pub public_key: PublicKey<P>,

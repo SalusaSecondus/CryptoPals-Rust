@@ -9,6 +9,7 @@ use crate::{
     KeyPair, PrivateKey, PublicKey,
 };
 
+#[derive(Debug, Clone)]
 pub struct DsaParams {
     p: BigUint,
     q: BigUint,
@@ -49,9 +50,9 @@ where
 {
     let g_k = mod_exp(&params.g, k, &params.p);
     let r = g_k % &params.q;
-    if r.is_zero() {
-        bail!("Bad k");
-    }
+    // if r.is_zero() {
+    //     bail!("Bad k");
+    // }
 
     let h = H::oneshot_digest_num(&data);
     let h_xr = &h + (priv_key * &r);
@@ -68,7 +69,7 @@ where
 {
     loop {
         let k = dsa_ephemeral(&params.q);
-        if let Ok(result) = dsa_sign_explicit_k::<H>(params, &priv_key.0, data, &k) {
+        if let Ok(result) = dsa_sign_explicit_k::<H>(params, priv_key, data, &k) {
             return result;
         }
     }
@@ -76,7 +77,7 @@ where
 
 pub fn dsa_verify<H>(
     params: &DsaParams,
-    pub_key: &PublicKey<BigUint>,
+    y: &PublicKey<BigUint>,
     data: &[u8],
     signature: &[BigUint],
 ) -> Result<()>
@@ -84,7 +85,6 @@ where
     H: DigestOneShot,
 {
     ensure!(signature.len() == 2, "Signature is of invalid length");
-    let y = &pub_key.0;
     let r = &signature[0];
     let s = &signature[1];
     ensure!(r < &params.q, "r is out of range");
@@ -316,5 +316,25 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
             }
         }
         bail!("Could not find match");
+    }
+
+    #[test]
+    pub fn challenge_45() -> Result<()> {
+        let mut msg1 = [0u8; 32];
+        OsRng.fill_bytes(&mut msg1);
+        let msg1 = msg1;
+
+        let zero_params = DsaParams {
+            g: BigUint::zero(),
+            .. DSA_PARAMS.clone()
+        };
+
+        let key_pair = gen_dsa(&DSA_PARAMS);
+        let zero_sig = dsa_sign::<Sha1>(&zero_params, &key_pair.private_key, &msg1);
+        dsa_verify::<Sha1>(&zero_params, &key_pair.public_key, &msg1, &zero_sig)?;
+        println!("Zero sig: {:?}", zero_sig);
+        let zero_sig = [BigUint::zero(), BigUint::one()];
+        dsa_verify::<Sha1>(&zero_params, &key_pair.public_key, &msg1, &zero_sig)?;
+        Ok(())
     }
 }
