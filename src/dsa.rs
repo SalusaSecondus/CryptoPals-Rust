@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Result};
+use anyhow::{ensure, Result};
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
@@ -118,7 +118,7 @@ pub fn recover_private(
 mod tests {
     use super::*;
     use crate::digest::Sha1;
-    use anyhow::Context;
+    use anyhow::{bail, Context};
     use rand::RngCore;
     use rand_core::OsRng;
 
@@ -335,6 +335,20 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
         println!("Zero sig: {:?}", zero_sig);
         let zero_sig = [BigUint::zero(), BigUint::one()];
         dsa_verify::<Sha1>(&zero_params, &key_pair.public_key, &msg1, &zero_sig)?;
+
+        let one_params = DsaParams {
+            g: &DSA_PARAMS.p + BigUint::one(),
+            .. DSA_PARAMS.clone()
+        };
+
+        let z: BigUint = 2u32.into();
+        let y = &key_pair.public_key.0;
+        let r = ((y * y) % &one_params.p) % &one_params.q;
+        let z_inv = inv_mod(&z, &one_params.q)?;
+        let s = (&r * z_inv) % &one_params.q;
+
+        let evil_sig = [r, s];
+        dsa_verify::<Sha1>(&one_params, &key_pair.public_key, &msg1, &evil_sig)?;
         Ok(())
     }
 }
