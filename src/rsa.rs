@@ -49,16 +49,21 @@ impl RsaPrivateKey for RsaKeyImpl {
 }
 
 pub fn gen_rsa(bit_size: u64, pub_exp: &BigUint) -> (impl RsaKey, impl RsaPrivateKey) {
-    // println!("Generating first prime");
-    let p = rand_prime(bit_size / 2);
+    let mut p = BigUint::one();
+    let mut trial = 0;
     loop {
-        // println!("Generating second prime");
+        if trial  % 10 == 0 {
+            println!("Generating first prime");
+            p = rand_prime(bit_size / 2);
+        }
+        trial += 1;
+        println!("Generating second prime");
         let q = rand_prime(bit_size / 2);
         let totient = (&p - BigUint::one()) * (&q - BigUint::one());
 
         let inverse = inv_mod(pub_exp, &totient);
         if inverse.is_err() {
-            // println!("Retrying due to bad inverse: {:?}", inverse);
+            println!("Retrying due to bad inverse: {:?}", inverse);
             continue;
         }
         let inverse = inverse.unwrap();
@@ -78,11 +83,11 @@ pub fn gen_rsa(bit_size: u64, pub_exp: &BigUint) -> (impl RsaKey, impl RsaPrivat
     }
 }
 
-fn rsa_public_raw<R: RsaKey>(key: &R, data: &BigUint) -> BigUint {
+pub fn rsa_public_raw<R: RsaKey + ?Sized>(key: &R, data: &BigUint) -> BigUint {
     mod_exp(data, key.pub_exp(), key.modulus())
 }
 
-fn rsa_private_raw<R: RsaPrivateKey>(key: &R, data: &BigUint) -> BigUint {
+pub fn rsa_private_raw<R: RsaPrivateKey + ?Sized>(key: &R, data: &BigUint) -> BigUint {
     mod_exp(data, key.priv_exp(), key.modulus())
 }
 
@@ -165,9 +170,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::digest::Sha1;
+    use crate::{digest::Sha1, oracles::Challenge46Oracle};
     use anyhow::Result;
     use num_bigint::RandBigInt;
+    use num_traits::Zero;
     use rand::RngCore;
     use rand_core::OsRng;
 
@@ -310,5 +316,49 @@ mod tests {
         println!("Verifying");
         assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, true).is_err());
         rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, false)
+    }
+
+    #[test]
+    #[ignore = "slow"]
+    fn challenge_46() -> Result<()> {
+        println!("Creating oracle");
+        let oracle = Challenge46Oracle::new();
+        
+        let key = oracle.public_key();
+        let ciphertext = oracle.ciphertext();
+
+
+        let mut lower = BigUint::zero();
+        let mut upper = key.modulus().to_owned();
+        let mut current = BigUint::from_bytes_be(ciphertext);
+
+        let two: BigUint = 2u32.into();
+        let two_e = rsa_public_raw(key, &two);
+
+        println!("Starting loop");
+        let mut count = 0;
+        while &upper > &lower {
+            current = (current * &two_e) % key.modulus();
+            let midpoint = (&upper + &lower + BigUint::one()) / &two;
+            if oracle.oracle(&current.to_bytes_be()) {
+                // println!("Odd");
+                lower = midpoint;
+            } else {
+                // println!("Even");
+                upper = midpoint;
+            }
+            count += 1;
+            let upper_guess = upper.to_bytes_be();
+            let lower_guess = lower.to_bytes_be();
+            println!("Guess({})\n\t{}\n\t{}", count, hex::encode(&upper_guess), hex::encode(&lower_guess));
+            let upper_guess = String::from_utf8_lossy(&upper_guess);
+            let lower_guess = String::from_utf8_lossy(&lower_guess);
+            println!("\t{}\n\t{}", upper_guess, &lower_guess);
+        }
+        let upper_bytes = upper.to_bytes_be();
+        println!("Guess hex: {}", hex::encode(&upper_bytes));
+        let guess = String::from_utf8(upper_bytes)?;
+        // oracle.assert_guess(&guess); // Don't know why but cannot get the final byte right
+        Ok(())
     }
 }

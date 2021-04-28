@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{bail, ensure, Context, Result};
 use lazy_static::lazy_static;
+use num_bigint::BigUint;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
@@ -16,11 +17,7 @@ use thread::sleep;
 use time::{Duration, SystemTime, UNIX_EPOCH};
 use tiny_http::{Request, Response, Server};
 
-use crate::{
-    aes::AesKey,
-    digest::{Hmac, Sha1},
-    prng::MT19937,
-};
+use crate::{aes::AesKey, digest::{Hmac, Sha1}, prng::MT19937, rsa::{RsaKey, RsaPrivateKey, gen_rsa, rsa_private_raw, rsa_public_raw}};
 use crate::{
     digest::{Digest, PrefixMac},
     padding::Padding,
@@ -619,6 +616,58 @@ pub fn challenge3x(millis: u64) -> OracleServer<impl OracleServerHandler> {
     };
 
     OracleServer::new(handler)
+}
+
+pub struct Challenge46Oracle {
+    key: Box<dyn RsaPrivateKey>,
+    public_key: Box<dyn RsaKey>,
+    ciphertext: Vec<u8>,
+}
+
+impl Challenge46Oracle {
+    fn plaintext() -> String {
+        let bytes = base64::decode("VGhhdCdzIHdoeSBJIGZvdW5kIHlvdSBkb24ndCBwbGF5IGFyb3VuZCB3aXRoIHRoZSBGdW5reSBDb2xkIE1lZGluYQ").unwrap();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    pub fn new() -> Self {
+        let key_pair = gen_rsa(1024, &3u32.into());
+        let plaintext = Self::plaintext();
+        let plaintext = plaintext.as_bytes();
+        let plaintext = BigUint::from_bytes_be(plaintext);
+        let ciphertext = rsa_public_raw(&key_pair.0, &plaintext).to_bytes_be();
+        Self {
+            key: Box::new(key_pair.1),
+            public_key: Box::new(key_pair.0),
+            ciphertext
+        }
+    }
+
+    pub fn ciphertext(&self) -> &[u8] {
+        &self.ciphertext
+    }
+
+    pub fn public_key(&self) -> &dyn RsaKey {
+        self.public_key.as_ref()
+    }
+
+    pub fn oracle(&self, ciphertext: &[u8]) -> bool {
+        let ciphertext = BigUint::from_bytes_be(ciphertext);
+        let plaintext = rsa_private_raw(self.key.as_ref(), &ciphertext);
+        // println!("Num: {}", plaintext);
+        plaintext.bit(0)
+    }
+
+    pub fn assert_guess(self, plaintext: &str) {
+        assert_eq!(&Self::plaintext(), plaintext);
+    }
+
+    pub fn debug(&self, ciphertext: &[u8]) {
+        let ciphertext = BigUint::from_bytes_be(ciphertext);
+        let plaintext = rsa_private_raw(self.key.as_ref(), &ciphertext);
+        let plaintext = String::from_utf8(plaintext.to_bytes_be());
+        println!("Oracle debug: {:?}", plaintext);
+    }
 }
 
 #[cfg(test)]
