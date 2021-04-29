@@ -326,7 +326,7 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
 
         let zero_params = DsaParams {
             g: BigUint::zero(),
-            .. DSA_PARAMS.clone()
+            ..DSA_PARAMS.clone()
         };
 
         let key_pair = gen_dsa(&DSA_PARAMS);
@@ -338,7 +338,7 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
 
         let one_params = DsaParams {
             g: &DSA_PARAMS.p + BigUint::one(),
-            .. DSA_PARAMS.clone()
+            ..DSA_PARAMS.clone()
         };
 
         let z: BigUint = 2u32.into();
