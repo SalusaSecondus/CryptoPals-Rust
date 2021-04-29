@@ -9,6 +9,7 @@ use std::{
 use anyhow::{bail, ensure, Context, Result};
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
+use num_traits::Num;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
@@ -17,7 +18,12 @@ use thread::sleep;
 use time::{Duration, SystemTime, UNIX_EPOCH};
 use tiny_http::{Request, Response, Server};
 
-use crate::{aes::AesKey, digest::{Hmac, Sha1}, prng::MT19937, rsa::{RsaKey, RsaPrivateKey, gen_rsa, rsa_private_raw, rsa_public_raw}};
+use crate::{
+    aes::AesKey,
+    digest::{Hmac, Sha1},
+    prng::MT19937,
+    rsa::{gen_rsa, rsa_private_raw, rsa_public_raw, RsaKey, RsaKeyImpl, RsaPrivateKey},
+};
 use crate::{
     digest::{Digest, PrefixMac},
     padding::Padding,
@@ -639,7 +645,7 @@ impl Challenge46Oracle {
         Self {
             key: Box::new(key_pair.1),
             public_key: Box::new(key_pair.0),
-            ciphertext
+            ciphertext,
         }
     }
 
@@ -667,6 +673,94 @@ impl Challenge46Oracle {
         let plaintext = rsa_private_raw(self.key.as_ref(), &ciphertext);
         let plaintext = String::from_utf8(plaintext.to_bytes_be());
         println!("Oracle debug: {:?}", plaintext);
+    }
+}
+
+pub struct Challenge47Oracle {
+    key: Box<dyn RsaPrivateKey>,
+    public_key: Box<dyn RsaKey>,
+    ciphertext: Vec<u8>,
+    padding: Padding,
+}
+
+impl Challenge47Oracle {
+    pub fn smoke(pub_key: &str, priv_key: &str, padded: &str) -> Self {
+        let modulus = BigUint::from_str_radix(pub_key, 16).unwrap();
+        let priv_exp = Some(BigUint::from_str_radix(priv_key, 16).unwrap());
+        let plaintext = BigUint::from_str_radix(padded, 16).unwrap();
+        let key = RsaKeyImpl {
+            modulus,
+            pub_exp: 3u32.into(),
+            priv_exp,
+        };
+        let pub_key = key.clone();
+        println!("padded: {}", padded);
+        let ciphertext = rsa_public_raw(&pub_key, &plaintext);
+        println!("ciphertext: {}", ciphertext);
+        let ciphertext = ciphertext.to_bytes_be();
+        let padding = Padding::Pkcs1PaddingEncryption(key.modulus().bits());
+        let key = Box::new(key);
+        let public_key = Box::new(pub_key);
+        Self {
+            key,
+            public_key,
+            ciphertext,
+            padding,
+        }
+    }
+    pub fn new(bit_size: u64) -> Self {
+        let key_pair = gen_rsa(bit_size, &3u32.into());
+        let plaintext = "kick it, CC";
+        let plaintext = plaintext.as_bytes();
+        let padding = Padding::Pkcs1PaddingEncryption(bit_size);
+        let plaintext = padding.pad(plaintext).unwrap();
+        println!("Padded: {}", hex::encode(&plaintext));
+        let plaintext = BigUint::from_bytes_be(&plaintext);
+        let ciphertext = rsa_public_raw(&key_pair.0, &plaintext).to_bytes_be();
+        Self {
+            key: Box::new(key_pair.1),
+            public_key: Box::new(key_pair.0),
+            padding,
+            ciphertext,
+        }
+    }
+
+    pub fn ciphertext(&self) -> &[u8] {
+        &self.ciphertext
+    }
+
+    pub fn public_key(&self) -> &dyn RsaKey {
+        self.public_key.as_ref()
+    }
+
+    pub fn lax(&self, ciphertext: &[u8]) -> bool {
+        // println!("Calling oracle");
+        let ciphertext = BigUint::from_bytes_be(ciphertext);
+        let plaintext = rsa_private_raw(self.key.as_ref(), &ciphertext);
+        let plaintext = plaintext.to_bytes_be();
+        // println!("\t{} <- {}", hex::encode(&plaintext), ciphertext.to_str_radix(16));
+        let em_len: usize = ((self.key.modulus().bits() + 7) / 8) as usize;
+        let base_index = if plaintext.len() == em_len {
+            if plaintext[0] != 0 {
+                return false;
+            }
+            1
+        } else if plaintext.len() == em_len - 1 {
+            0
+        } else {
+            return false;
+        };
+        plaintext[base_index] == 2
+    }
+
+    pub fn strict(&self, ciphertext: &[u8]) -> bool {
+        let ciphertext = BigUint::from_bytes_be(ciphertext);
+        let plaintext = rsa_private_raw(self.key.as_ref(), &ciphertext);
+        self.padding.unpad(&plaintext.to_bytes_be()).is_ok()
+    }
+
+    pub fn assert_guess(self, plaintext: &str) {
+        assert_eq!("kick it, CC", plaintext);
     }
 }
 

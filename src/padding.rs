@@ -1,7 +1,9 @@
 use anyhow::{bail, ensure, Result};
-
+use rand::{distributions::Uniform, Rng};
+use rand_core::OsRng;
 pub enum Padding {
     Pkcs1PaddingSigning(u64),
+    Pkcs1PaddingEncryption(u64),
     Pkcs7Padding(usize),
 }
 
@@ -9,13 +11,15 @@ impl Padding {
     pub fn pad(&self, data: &[u8]) -> Result<Vec<u8>> {
         match self {
             Padding::Pkcs1PaddingSigning(bit_length) => pkcs1_sign_pad(data, *bit_length),
+            Padding::Pkcs1PaddingEncryption(bit_length) => pkcs1_encrypt_pad(data, *bit_length),
             Padding::Pkcs7Padding(width) => pkcs7_pad(data, *width),
         }
     }
 
     pub fn unpad(&self, data: &[u8]) -> Result<Vec<u8>> {
         match self {
-            Padding::Pkcs1PaddingSigning(bit_length) => pkcs1_sign_unpad(data, *bit_length),
+            Padding::Pkcs1PaddingSigning(bit_length) => pkcs1_sign_unpad(data, 1, *bit_length),
+            Padding::Pkcs1PaddingEncryption(bit_length) => pkcs1_sign_unpad(data, 2, *bit_length),
             Padding::Pkcs7Padding(width) => pkcs7_unpad(data, *width),
         }
     }
@@ -43,7 +47,34 @@ fn pkcs1_sign_pad(data: &[u8], bit_length: u64) -> Result<Vec<u8>> {
     Ok(result)
 }
 
-fn pkcs1_sign_unpad(data: &[u8], bit_length: u64) -> Result<Vec<u8>> {
+fn pkcs1_encrypt_pad(data: &[u8], bit_length: u64) -> Result<Vec<u8>> {
+    let em_len: usize = ((bit_length + 7) / 8) as usize;
+    let t_len = data.len();
+    ensure!(
+        em_len - 11 >= t_len,
+        format!(
+            "intended encoded message length too short. em_len = {}, t_len = {}",
+            em_len, t_len
+        )
+    );
+
+    let pad_len = em_len - t_len - 3;
+    let mut result = vec![];
+    result.reserve_exact(em_len);
+    result.push(0x00);
+    result.push(0x02);
+    let mut rng = OsRng::default();
+    let range = Uniform::new_inclusive(1u8, 255u8);
+    for _ in 0..pad_len {
+        result.push(rng.sample(range));
+    }
+    // rng
+    result.push(0x00);
+    result.extend_from_slice(data);
+    Ok(result)
+}
+
+fn pkcs1_sign_unpad(data: &[u8], padding_type: u8, bit_length: u64) -> Result<Vec<u8>> {
     let em_len: usize = ((bit_length + 7) / 8) as usize;
     let base_index = if data.len() == em_len {
         ensure!(data[0] == 0, "Invalid first byte");
@@ -54,7 +85,7 @@ fn pkcs1_sign_unpad(data: &[u8], bit_length: u64) -> Result<Vec<u8>> {
         bail!("Invalid input length");
     };
 
-    ensure!(data[base_index] == 1, "Invalid second byte");
+    ensure!(data[base_index] == padding_type, "Invalid second byte");
 
     // Find the start of the data
     for (idx, b) in data.iter().enumerate().skip(base_index + 1) {

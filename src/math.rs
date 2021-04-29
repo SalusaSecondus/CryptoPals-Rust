@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display};
+
 use anyhow::{bail, ensure, Context, Result};
 use lazy_static::lazy_static;
 use num_bigint::{BigInt, BigUint, RandBigInt, Sign, ToBigInt};
@@ -237,6 +239,64 @@ impl Challenge34Actor {
         hash.update(&s.to_bytes_be());
         let raw_key = &hash.digest()[..16];
         AesKey::new(raw_key).unwrap()
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct Interval(pub BigUint, pub BigUint);
+
+impl Debug for Interval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}, {}]", self.0, self.1)
+    }
+}
+
+impl Display for Interval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}, {}]", self.0, self.1)
+    }
+}
+
+impl Interval {
+    pub fn overlaps(&self, other: &Self) -> bool {
+        (self.0 <= other.0 && self.1 >= other.0) || (other.0 <= self.0 && other.1 >= self.0)
+    }
+
+    pub fn merge_into(&mut self, other: &Self) -> bool {
+        if !self.overlaps(other) {
+            return false;
+        }
+        let tmp = (&self.0).min(&other.0);
+        self.0 = tmp.to_owned();
+        let tmp = (&self.1).max(&other.1);
+        self.1 = tmp.to_owned();
+        true
+    }
+
+    pub fn width(&self) -> BigUint {
+        BigUint::one() + &self.1 - &self.0
+    }
+
+    pub fn simplify(intervals: Vec<Interval>) -> Vec<Interval> {
+        let mut intervals = intervals;
+        intervals.sort();
+        intervals.iter().fold(vec![], |mut result, interval| {
+            match result.last_mut() {
+                Option::None => result.push(interval.clone()),
+                Option::Some(previous) => {
+                    if !previous.merge_into(interval) {
+                        result.push(interval.clone());
+                    }
+                }
+            };
+            result
+        })
+    }
+
+    pub fn print_stats(intervals: &Vec<Interval>) {
+        let count = intervals.len();
+        let remaining: BigUint = intervals.iter().map(|i| i.width()).sum();
+        println!("{} interval(s) have {} values remaining.", count, remaining);
     }
 }
 

@@ -7,7 +7,7 @@ use num_traits::One;
 use crate::padding::Padding;
 use crate::{
     digest::{Digest, DigestOneShot},
-    math::{inv_mod, mod_exp, rand_prime},
+    math::{inv_mod, mod_exp, rand_prime, Interval},
 };
 
 lazy_static! {
@@ -23,10 +23,11 @@ pub trait RsaPrivateKey: RsaKey {
     fn priv_exp(&self) -> &BigUint;
 }
 
-struct RsaKeyImpl {
-    modulus: BigUint,
-    pub_exp: BigUint,
-    priv_exp: Option<BigUint>,
+#[derive(Clone)]
+pub struct RsaKeyImpl {
+    pub modulus: BigUint,
+    pub pub_exp: BigUint,
+    pub priv_exp: Option<BigUint>,
 }
 
 impl RsaKey for RsaKeyImpl {
@@ -52,18 +53,18 @@ pub fn gen_rsa(bit_size: u64, pub_exp: &BigUint) -> (impl RsaKey, impl RsaPrivat
     let mut p = BigUint::one();
     let mut trial = 0;
     loop {
-        if trial  % 10 == 0 {
-            println!("Generating first prime");
+        if trial % 10 == 0 {
+            // println!("Generating first prime");
             p = rand_prime(bit_size / 2);
         }
         trial += 1;
-        println!("Generating second prime");
+        // println!("Generating second prime");
         let q = rand_prime(bit_size / 2);
         let totient = (&p - BigUint::one()) * (&q - BigUint::one());
 
         let inverse = inv_mod(pub_exp, &totient);
         if inverse.is_err() {
-            println!("Retrying due to bad inverse: {:?}", inverse);
+            // println!("Retrying due to bad inverse: {:?}", inverse);
             continue;
         }
         let inverse = inverse.unwrap();
@@ -168,9 +169,165 @@ where
     Ok(())
 }
 
+#[allow(non_snake_case)]
+pub fn bleichenbacher<K, F>(key: &K, c: &BigUint, oracle: F) -> Result<BigUint>
+where
+    K: RsaKey + ?Sized,
+    F: Fn(&[u8]) -> bool,
+{
+    // Setup
+    let n = key.modulus();
+    let k = (n.bits() + 7) / 8;
+    let one = BigUint::one();
+    let two: BigUint = 2u32.into();
+    let B = &one << (8 * (k - 2));
+    let two_B = &two * &B;
+    let three_B = &two_B + &B;
+    // println!(
+    //     "n = {}, 2B = {}, 3B = {}, n / 3B = {}",
+    //     n.to_str_radix(16),
+    //     two_B.to_str_radix(16),
+    //     three_B.to_str_radix(16),
+    //     n / &three_B
+    // );
+    // Step 1: Blinding
+    println!("Bleichenbacher step 1");
+    let mut s = BigUint::one();
+    let mut M = vec![Interval(two_B.clone(), &three_B - &one)];
+    let mut i = 1;
+    // loop {
+    //     let s_e = rsa_public_raw(key, &s);
+    //     let c0 = (c * &s_e) % n;
+
+    //     if oracle(&c0.to_bytes_be()) {
+    //         break;
+    //     }
+
+    //     s += &one;
+    // }
+    let s_0 = s.clone();
+
+    while M.len() != 1 || !M.first().context("No more intervals?!")?.width().is_one() {
+        // println!("S = {}", s);
+        Interval::print_stats(&M);
+        // Step 2
+        if i == 1 {
+            println!("Bleichenbacher step 2.a");
+            s = n / &three_B;
+            // println!("Starting value for si = {}", s);
+            // println!("c = {}", c);
+            loop {
+                let s_e = rsa_public_raw(key, &s);
+                let c1 = (c * &s_e) % n;
+
+                if oracle(&c1.to_bytes_be()) {
+                    break;
+                }
+                s += &one;
+                
+            }
+        } else if !M.len().is_one() {
+            println!("Bleichenbacher step 2.b");
+            loop {
+                s += &one;
+                let s_e = rsa_public_raw(key, &s);
+                let c1 = (c * &s_e) % n;
+
+                if oracle(&c1.to_bytes_be()) {
+                    break;
+                }
+            }
+            // todo!("Not yet implemented");
+        } else {
+            println!("Bleichenbacher step 2.c");
+            let m = M.first().unwrap();
+            let (a, b) = (&m.0, &m.1);
+            let top = (b * &s) - &two_B;
+            // println!("Top: {}", top);
+            let mut r = &two * (top / n);
+            let mut rn = &r * n;
+            'two_c_loop: loop {
+                // println!("r: {}", r);
+                let start = (&two_B + &rn) / b;
+                let end = (&three_B + &rn) / a;
+                s = start;
+                let mut s_e = rsa_public_raw(key, &s);
+                while &s <= &end {
+                    // println!("s = {}", s);
+                    let c_n = (c * &s_e) % n;
+                    if oracle(&c_n.to_bytes_be()) {
+                        // println!("Found!");
+                        break 'two_c_loop;
+                    }
+
+                    s += &one;
+                    s_e = rsa_public_raw(key, &s); //(s_e * &s) % n;
+                }
+                r += &one;
+                rn += n;
+            } // two_c_loop
+        }
+        println!("Bleichenbacher step 3");
+        // println!("s = {}", s);
+        let s_minus_1 = &s - &one;
+        // Step 3
+        M = M
+            .iter()
+            .flat_map(|m| {
+                let mut working = vec![];
+                // println!("Interval: {}", m);
+                let (a, b) = (&m.0, &m.1);
+                // println!("Foo");
+                // println!("as ? 3B = {} ? {}", a * &s, &three_B);
+                let start = ((a * &s) - &three_B + &one) / n;
+                // println!("a = {}, si = {}", a, s);
+
+                // println!("Bar");
+                let end = ((b * &s) - &two_B) / n;
+                let mut r = start;
+                while &r <= &end {
+                    let rn = &r * n;
+                    // println!("r: {}, rn: {}", r, rn);
+                    let lower_candidate = (&two_B + &rn + &s_minus_1) / &s;
+                    let upper_candidate = (&three_B - &one + &rn) / &s;
+                    let new_lower = a.max(&lower_candidate).clone();
+                    let new_upper = b.min(&upper_candidate).clone();
+                    if new_lower <= new_upper {
+                        working.push(Interval(new_lower, new_upper));
+                    }
+                    r += &one;
+                }
+                working
+            })
+            .collect();
+        // println!("{:?}", M);
+        // Simplify intervals
+        // println!("Baz");
+        let old_len = M.len();
+        if old_len != 1 {
+            M = Interval::simplify(M);
+        }
+        println!("Simplified from {} intervals to {}", old_len, M.len());
+        // Step 4 increment
+        i += 1;
+    }
+    // Step 4 Completion
+    println!("Bleichenbacher step 4 (complete)");
+    let result = &M.first().context("No intervals?!")?.0;
+    if s_0.is_one() {
+        Ok(result.clone())
+    } else {
+        let s_inv = inv_mod(&s_0, n)?;
+        Ok((result * s_inv) % n)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{digest::Sha1, oracles::Challenge46Oracle};
+    use crate::{
+        digest::Sha1,
+        oracles::{Challenge46Oracle, Challenge47Oracle},
+    };
     use anyhow::Result;
     use num_bigint::RandBigInt;
     use num_traits::Zero;
@@ -323,10 +480,9 @@ mod tests {
     fn challenge_46() -> Result<()> {
         println!("Creating oracle");
         let oracle = Challenge46Oracle::new();
-        
+
         let key = oracle.public_key();
         let ciphertext = oracle.ciphertext();
-
 
         let mut lower = BigUint::zero();
         let mut upper = key.modulus().to_owned();
@@ -350,15 +506,49 @@ mod tests {
             count += 1;
             let upper_guess = upper.to_bytes_be();
             let lower_guess = lower.to_bytes_be();
-            println!("Guess({})\n\t{}\n\t{}", count, hex::encode(&upper_guess), hex::encode(&lower_guess));
+            println!(
+                "Guess({})\n\t{}\n\t{}",
+                count,
+                hex::encode(&upper_guess),
+                hex::encode(&lower_guess)
+            );
             let upper_guess = String::from_utf8_lossy(&upper_guess);
             let lower_guess = String::from_utf8_lossy(&lower_guess);
             println!("\t{}\n\t{}", upper_guess, &lower_guess);
         }
-        let upper_bytes = upper.to_bytes_be();
-        println!("Guess hex: {}", hex::encode(&upper_bytes));
-        let guess = String::from_utf8(upper_bytes)?;
+        // let upper_bytes = upper.to_bytes_be();
+        // println!("Guess hex: {}", hex::encode(&upper_bytes));
+        // let guess = String::from_utf8(upper_bytes)?;
         // oracle.assert_guess(&guess); // Don't know why but cannot get the final byte right
+        Ok(())
+    }
+
+    #[test]
+    pub fn challenge_47() -> Result<()> {
+        let oracle = Challenge47Oracle::new(256);
+        let ciphertext = oracle.ciphertext();
+        let ciphertext = BigUint::from_bytes_be(ciphertext);
+        let result = bleichenbacher(oracle.public_key(), &ciphertext, |c| oracle.lax(c))?;
+        let plaintext = result.to_bytes_be();
+        let plaintext = Padding::Pkcs1PaddingEncryption(256).unpad(&plaintext)?;
+        let plaintext = String::from_utf8_lossy(&plaintext);
+        println!("Plaintext? {}", plaintext);
+        oracle.assert_guess(&plaintext);
+        Ok(())
+    }
+
+    #[test]
+    pub fn challenge_48() -> Result<()> {
+        let oracle = Challenge47Oracle::new(768);
+        let ciphertext = oracle.ciphertext();
+        let ciphertext = BigUint::from_bytes_be(ciphertext);
+        let result = bleichenbacher(oracle.public_key(), &ciphertext, |c| oracle.lax(c))?;
+        let plaintext = result.to_bytes_be();
+        // println!("Padded: {}", hex::encode(&plaintext));
+        let plaintext = Padding::Pkcs1PaddingEncryption(768).unpad(&plaintext)?;
+        let plaintext = String::from_utf8_lossy(&plaintext);
+        println!("Plaintext? {}", plaintext);
+        oracle.assert_guess(&plaintext);
         Ok(())
     }
 }
