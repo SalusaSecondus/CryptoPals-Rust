@@ -1,12 +1,9 @@
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    marker::PhantomData,
-    net::SocketAddr,
-    sync::{atomic::AtomicBool, Arc},
+    cell::RefCell, collections::HashMap, fmt::format, marker::PhantomData, net::SocketAddr, sync::{atomic::AtomicBool, Arc}
 };
 
 use anyhow::{bail, ensure, Context, Result};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::Num;
@@ -27,6 +24,7 @@ use crate::{
 use crate::{
     digest::{Digest, PrefixMac},
     padding::Padding,
+    set7
 };
 
 pub struct Challenge11Oracle();
@@ -761,6 +759,56 @@ impl Challenge47Oracle {
 
     pub fn assert_guess(self, plaintext: &str) {
         assert_eq!("kick it, CC", plaintext);
+    }
+}
+
+pub struct Challenge49Oracle {
+    key: AesKey
+}
+
+impl Default for Challenge49Oracle {
+    fn default() -> Self {
+        Self { key: AesKey::rand_key(128).unwrap() }
+    }
+}
+
+impl Challenge49Oracle {
+    pub fn sts1(from_id: &str, to_id: &str, amount: u32) -> String {
+        let sts = format!("from={}&to={}&amount={}", from_id, to_id, amount);
+        println!("STS = {}", sts);
+        sts
+    }
+
+    pub fn sts2(from_id: &str, txns: &[(&str, u32)]) -> String {
+        let result = format!("from={}&tx_list=", from_id);
+        result + &txns.iter().map(|(to, amt)| format!("{}:{}", to, amt)).join(";")
+    }
+
+    pub fn sign1(&self, iv: &[u8], from_id: &str, to_id: &str, amount: u32) -> Result<Vec<u8>> {
+        self.sign_internal(iv, from_id, to_id, amount)
+    }
+
+    fn sign_internal(&self, iv: &[u8], from_id: &str, to_id: &str, amount: u32) -> Result<Vec<u8>> {
+        self.key.cbc_mac(iv, Self::sts1(from_id, to_id, amount).as_bytes())
+    }
+
+    pub fn verify1(&self, iv: &[u8], mac: &[u8], from_id: &str, to_id: &str, amount: u32) -> Result<()> {
+        let sts = Self::sts1(from_id, to_id, amount);
+        ensure!(self.verify_mac(iv, sts.as_bytes(), mac));
+        Ok(())
+    }
+
+    pub fn sign2(&self, from_id: &str, txns: &[(&str, u32)]) -> Result<Vec<u8>> {
+        let sts = Self::sts2(from_id, txns);
+         self.key.cbc_mac(&[0u8; 16], sts.as_bytes())
+    }
+
+    pub fn verify_mac(&self, iv: &[u8], msg: &[u8], tag: &[u8]) -> bool {
+        if let Ok(expected) = self.key.cbc_mac(iv, msg) {
+            expected == tag
+        } else {
+            false
+        }
     }
 }
 

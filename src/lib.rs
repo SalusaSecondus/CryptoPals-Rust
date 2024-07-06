@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use anyhow::{Context, Result};
+use const_format::concatcp;
 use lazy_static::lazy_static;
 use rand::seq::IteratorRandom;
 use rand_core::OsRng;
@@ -21,6 +22,7 @@ mod padding;
 mod prng;
 mod rsa;
 mod srp;
+mod set7;
 
 #[derive(Debug)]
 pub struct PublicKey<T>(T);
@@ -48,7 +50,7 @@ fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
     a.iter().zip(b.iter().cycle()).map(|(a, b)| a ^ b).collect()
 }
 
-const FILE_BASE: &str = r"res\";
+const FILE_BASE: &str = concatcp!("res", std::path::MAIN_SEPARATOR);
 
 pub fn random_word() -> Result<String> {
     random_word_limit(usize::MAX)

@@ -1,6 +1,7 @@
-use crate::xor;
+use crate::{padding::Padding, xor};
 use anyhow::{bail, ensure, Result};
 use core::fmt::Display;
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use rand::RngCore;
 use rand_core::OsRng;
@@ -120,7 +121,9 @@ impl AesKey {
         Ok(plaintext
             .chunks_exact(BLOCK_SIZE)
             .flat_map(|pt_block| {
-                let ct_block = self.encrypt_block(&xor(&previous_block, pt_block));
+                let xored = xor(&previous_block, pt_block);
+                let ct_block = self.encrypt_block(&xored);
+                println!("Hex: {}", hex::encode(xored));
                 previous_block.copy_from_slice(&ct_block);
                 ct_block
             })
@@ -143,6 +146,17 @@ impl AesKey {
                 pt_block
             })
             .collect())
+    }
+
+    pub fn cbc_mac(&self, iv: &[u8], msg: &[u8]) -> Result<Vec<u8>> {
+        let padding = Padding::Pkcs7Padding(16);
+        let mac: Vec<u8> = self
+            .encrypt_cbc(iv, &padding.pad(msg)?)?
+            .iter()
+            .tail(16)
+            .copied()
+            .collect();
+        Ok(mac)
     }
 
     pub fn encrypt_ecb(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
