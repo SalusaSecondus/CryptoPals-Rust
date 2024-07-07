@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell, collections::HashMap, fmt::format, marker::PhantomData, net::SocketAddr, sync::{atomic::AtomicBool, Arc}
+    cell::RefCell, collections::HashMap, fmt::format, io::Write, marker::PhantomData, net::SocketAddr, sync::{atomic::AtomicBool, Arc}
 };
 
 use anyhow::{bail, ensure, Context, Result};
@@ -809,6 +809,32 @@ impl Challenge49Oracle {
         } else {
             false
         }
+    }
+}
+
+pub struct Challenge51Oracle {
+    session_id: String
+}
+
+impl Challenge51Oracle {
+    pub fn new() -> Self {
+        Challenge51Oracle { session_id: "TmV2ZXIgcmV2ZWFsIHRoZSBXdS1UYW5nIFNlY3JldCE=".to_owned() }
+    }
+
+    fn create_http_request(&self, p: &str) -> String {
+        let len_p = p.len();
+        format!("POST / HTTP/1.1\nHost: hapless.com\nCookie: sessionid={}\nContent-Length: {}\n{}", self.session_id, len_p, p)
+    }
+
+    pub fn oracle1(&self, p: &str) -> Result<usize> {
+        let request = self.create_http_request(p);
+        // println!("{}", request);
+        let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        e.write_all(request.as_bytes())?;
+        let plaintext = e.finish()?;
+        let key = AesKey::rand_key(128)?;
+        let ciphertext = key.ctr(&[0u8; 16], &plaintext);
+        Ok(ciphertext.len())
     }
 }
 

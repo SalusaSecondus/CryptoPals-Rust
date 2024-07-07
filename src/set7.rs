@@ -2,8 +2,8 @@
 mod tests {
     use crate::{
         aes::AesKey,
-        oracles::Challenge49Oracle,
-        padding::{self, Padding},
+        oracles::{Challenge49Oracle, Challenge51Oracle},
+        padding::Padding,
         xor,
     };
     use anyhow::{Context, Result};
@@ -65,18 +65,23 @@ mod tests {
         let key = AesKey::new(b"YELLOW SUBMARINE")?;
         let good_js = "alert('MZA who was that?');\n";
         let good_hash = "296b8d7cb78a243dda4d0a61d33bbdd1";
-        assert_eq!(
-            good_hash,
-            hex::encode(key.cbc_mac(iv, good_js.as_bytes())?)
-        );
+        assert_eq!(good_hash, hex::encode(key.cbc_mac(iv, good_js.as_bytes())?));
         let padded_good_js = pkcs7.pad(good_js.as_bytes())?;
         println!("{}", hex::encode(&padded_good_js));
         let encrypted_good = key.encrypt_cbc(&[0u8; 16], &padded_good_js)?;
         println!("Encrypted good: {}", hex::encode(&encrypted_good));
 
-        let decrypted_tag = key.decrypt_block(encrypted_good.chunks_exact(16).last().context("To few")?);
-        let expected_end_pt = xor(encrypted_good.chunks_exact(16).tail(2).next().context("too few")?, &decrypted_tag);
-        println!("{}", hex::encode(&expected_end_pt));
+        let decrypted_tag =
+            key.decrypt_block(encrypted_good.chunks_exact(16).last().context("To few")?);
+        let expected_end_pt = xor(
+            encrypted_good
+                .chunks_exact(16)
+                .tail(2)
+                .next()
+                .context("too few")?,
+            &decrypted_tag,
+        );
+        println!("{}", hex::encode(expected_end_pt));
 
         let target_pt = "alert('Ayo, the Wu is back!');\n <!--                            -->";
         let padded_target = pkcs7.pad(target_pt.as_bytes())?;
@@ -85,7 +90,7 @@ mod tests {
         let encrypted_target = key.encrypt_cbc(iv, &padded_target)?;
 
         let mut replaced_end = vec![];
-        replaced_end.extend_from_slice(&encrypted_target[..encrypted_target.len()-16]);
+        replaced_end.extend_from_slice(&encrypted_target[..encrypted_target.len() - 16]);
         replaced_end.extend_from_slice(&hex::decode(good_hash)?);
         println!("encrypted_target: {}", hex::encode(&encrypted_target));
         println!("replaced_end:     {}", hex::encode(&replaced_end));
@@ -96,14 +101,80 @@ mod tests {
         }
         let decrypted_replaced_end = key.decrypt_cbc(iv, &replaced_end)?;
         println!("decrypted_target: {}", hex::encode(&decrypted_replaced_end));
-        let final_diff = xor(final_target, &decrypted_replaced_end.chunks_exact(16).last().unwrap());
+        let final_diff = xor(
+            final_target,
+            decrypted_replaced_end.chunks_exact(16).last().unwrap(),
+        );
         println!("final_diff: {}", hex::encode(&final_diff));
         for (idx, val) in final_diff.iter().enumerate() {
             replaced_end[tmp_len - 32 + idx] = *val;
         }
         println!("replaced_end:     {}", hex::encode(&replaced_end));
         let decrypted_replaced_end = key.decrypt_cbc(iv, &replaced_end)?;
+        let decrypted_replaced_end = pkcs7.unpad(&decrypted_replaced_end)?;
         println!("decrypted_target: {}", hex::encode(&decrypted_replaced_end));
+
+        assert_eq!(
+            good_hash,
+            hex::encode(key.cbc_mac(iv, &decrypted_replaced_end)?)
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "slow"]
+    fn challenge51() -> Result<()> {
+        let base64_chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/=";
+        let oracle = Challenge51Oracle::new();
+        println!("Length: {}", oracle.oracle1("sessionid=A")?);
+        println!("Length: {}", oracle.oracle1("sessionid=T")?);
+
+        let mut guess: Vec<char> = vec![];
+        let mut curr_guess = ['0'; 3];
+
+        while guess.last().unwrap_or(&'A') != &'=' {
+            let mut best_guess = curr_guess;
+            let mut best_guess_value = usize::MAX;
+            let mut length = 0;
+            'first_loop: for first_guess in base64_chars.chars() {
+                curr_guess[0] = first_guess;
+                'second_loop: for second_guess in base64_chars.chars() {
+                    curr_guess[1] = second_guess;
+                    for third_guess in base64_chars.chars().chain(itertools::repeat_n('\n', 1)) {
+                        curr_guess[2] = third_guess;
+                        let full_guess = format!(
+                            "Cookie: sessionid={}{}{}{}",
+                            guess.iter().join(""),
+                            curr_guess[0],
+                            curr_guess[1],
+                            curr_guess[2]
+                        );
+                        length = oracle.oracle1(&full_guess)?;
+
+                        if length < best_guess_value {
+                            best_guess_value = length;
+                            best_guess = curr_guess;
+                            println!(
+                                "{} -> {}: (Best: {}{}{} = {})",
+                                full_guess,
+                                length,
+                                best_guess[0],
+                                best_guess[1],
+                                best_guess[2],
+                                best_guess_value
+                            );
+                        }
+                        // if length > best_guess_value {
+                        //     continue 'first_loop;
+                        // }
+                    }
+                }
+            }
+
+            guess.push(best_guess[0]);
+            guess.push(best_guess[1]);
+            // todo!();
+        }
         Ok(())
     }
 }

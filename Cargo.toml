@@ -19,3 +19,4 @@ asn1 = "0.3"
 salusa_math = {path = "../salusa_math" }
 const_format = "0.2.32"
 itertools = "0.13"
+flate2 = "1.0"
