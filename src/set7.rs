@@ -122,59 +122,54 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "slow"]
+    // #[ignore = "slow"]
     fn challenge51() -> Result<()> {
         let base64_chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/=";
         let oracle = Challenge51Oracle::new();
+        let junk = "#!?:@&[]^";
         println!("Length: {}", oracle.oracle1("sessionid=A")?);
         println!("Length: {}", oracle.oracle1("sessionid=T")?);
 
         let mut guess: Vec<char> = vec![];
-        let mut curr_guess = ['0'; 3];
 
         while guess.last().unwrap_or(&'A') != &'=' {
-            let mut best_guess = curr_guess;
-            let mut best_guess_value = usize::MAX;
-            let mut length = 0;
-            'first_loop: for first_guess in base64_chars.chars() {
-                curr_guess[0] = first_guess;
-                'second_loop: for second_guess in base64_chars.chars() {
-                    curr_guess[1] = second_guess;
-                    for third_guess in base64_chars.chars().chain(itertools::repeat_n('\n', 1)) {
-                        curr_guess[2] = third_guess;
-                        let full_guess = format!(
-                            "Cookie: sessionid={}{}{}{}",
-                            guess.iter().join(""),
-                            curr_guess[0],
-                            curr_guess[1],
-                            curr_guess[2]
+            let mut best_guess = '?';
+            let mut best_guess_value: usize = usize::MAX;
+            for first_guess in base64_chars.chars() {
+                for second_guess in base64_chars.chars() {
+                    let full_guess = format!(
+                        "Cookie: sessionid={}{}{}{}",
+                        guess.iter().join(""),
+                        junk,
+                        first_guess,
+                        second_guess
+                    );
+                    let len2 = oracle.oracle1(&full_guess)?;
+                    let full_guess = format!(
+                        "Cookie: sessionid={}{}{}{}",
+                        guess.iter().join(""),
+                        first_guess,
+                        second_guess,
+                        junk
+                    );
+                    let len1 = oracle.oracle1(&full_guess)?;
+                    // println!("{}{}? {} <> {}", first_guess, second_guess, len1, len2);
+                    if len1 < len2 {
+                        best_guess = first_guess;
+                        best_guess_value = len1;
+                        println!(
+                            "{} -> {}: (Best: {} = {})",
+                            full_guess, len1, best_guess, best_guess_value
                         );
-                        length = oracle.oracle1(&full_guess)?;
-
-                        if length < best_guess_value {
-                            best_guess_value = length;
-                            best_guess = curr_guess;
-                            println!(
-                                "{} -> {}: (Best: {}{}{} = {})",
-                                full_guess,
-                                length,
-                                best_guess[0],
-                                best_guess[1],
-                                best_guess[2],
-                                best_guess_value
-                            );
-                        }
-                        // if length > best_guess_value {
-                        //     continue 'first_loop;
-                        // }
                     }
                 }
             }
-
-            guess.push(best_guess[0]);
-            guess.push(best_guess[1]);
+            guess.push(best_guess);
+            println!("Guessing {}", best_guess);
             // todo!();
         }
-        Ok(())
+        let final_guess = guess.iter().join("");
+        println!("Final guess: {}", final_guess);
+        oracle.check(&final_guess)
     }
 }

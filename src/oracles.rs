@@ -836,6 +836,11 @@ impl Challenge51Oracle {
         let ciphertext = key.ctr(&[0u8; 16], &plaintext);
         Ok(ciphertext.len())
     }
+
+    pub fn check(&self, guess: &str) -> Result<()> {
+        ensure!(self.session_id == guess);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
