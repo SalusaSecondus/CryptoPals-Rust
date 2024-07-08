@@ -1,6 +1,7 @@
-use std::{collections::HashMap, fmt::Display, sync::mpsc::channel};
+use std::{collections::HashMap, convert::TryInto, fmt::Display, sync::mpsc::channel};
 
 use hex::ToHex;
+use num_traits::{ToBytes, ToPrimitive};
 
 use crate::{aes::AesKey, digest::Digest, padding::Padding};
 use anyhow::Result;
@@ -16,6 +17,7 @@ use workerpool::{
 pub struct RD0 {
     initial: [u8; 2],
     state: [u8; 2],
+    length: usize,
     buffer: Option<Vec<u8>>,
 }
 
@@ -35,6 +37,7 @@ impl RD0 {
 impl Digest for RD0 {
     fn reset(&mut self) {
         self.state = self.initial;
+        self.length = 0;
     }
 
     fn update(&mut self, input: &[u8]) {
@@ -48,9 +51,12 @@ impl Digest for RD0 {
                 self.state.copy_from_slice(&new_state);
             }
         }
+        self.length += input.len();
     }
 
     fn digest(&mut self) -> Vec<u8> {
+        let encoded_length = self.length.to_u64().unwrap().to_be_bytes();
+        self.update(&encoded_length);
         let remaining = self.buffer.take().unwrap_or_default();
         let padded = Padding::Pkcs7Padding(Self::block_size())
             .pad(&remaining)
@@ -84,6 +90,7 @@ impl Display for RD0 {
 pub struct RD1 {
     initial: [u8; 4],
     state: [u8; 4],
+    length: usize,
     buffer: Option<Vec<u8>>,
 }
 
@@ -103,6 +110,7 @@ impl RD1 {
 impl Digest for RD1 {
     fn reset(&mut self) {
         self.state = self.initial;
+        self.length = 0;
     }
 
     fn update(&mut self, input: &[u8]) {
@@ -116,9 +124,12 @@ impl Digest for RD1 {
                 self.state.copy_from_slice(&new_state);
             }
         }
+        self.length += input.len();
     }
 
     fn digest(&mut self) -> Vec<u8> {
+        let encoded_length = self.length.to_u64().unwrap().to_be_bytes();
+        self.update(&encoded_length);
         let remaining = self.buffer.take().unwrap_or_default();
         let padded = Padding::Pkcs7Padding(Self::block_size())
             .pad(&remaining)
