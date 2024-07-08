@@ -1,5 +1,10 @@
 use std::{
-    cell::RefCell, collections::HashMap, fmt::format, io::Write, marker::PhantomData, net::SocketAddr, sync::{atomic::AtomicBool, Arc}
+    cell::RefCell,
+    collections::HashMap,
+    io::Write,
+    marker::PhantomData,
+    net::SocketAddr,
+    sync::{atomic::AtomicBool, Arc},
 };
 
 use anyhow::{bail, ensure, Context, Result};
@@ -24,7 +29,6 @@ use crate::{
 use crate::{
     digest::{Digest, PrefixMac},
     padding::Padding,
-    set7
 };
 
 pub struct Challenge11Oracle();
@@ -763,12 +767,14 @@ impl Challenge47Oracle {
 }
 
 pub struct Challenge49Oracle {
-    key: AesKey
+    key: AesKey,
 }
 
 impl Default for Challenge49Oracle {
     fn default() -> Self {
-        Self { key: AesKey::rand_key(128).unwrap() }
+        Self {
+            key: AesKey::rand_key(128).unwrap(),
+        }
     }
 }
 
@@ -781,7 +787,11 @@ impl Challenge49Oracle {
 
     pub fn sts2(from_id: &str, txns: &[(&str, u32)]) -> String {
         let result = format!("from={}&tx_list=", from_id);
-        result + &txns.iter().map(|(to, amt)| format!("{}:{}", to, amt)).join(";")
+        result
+            + &txns
+                .iter()
+                .map(|(to, amt)| format!("{}:{}", to, amt))
+                .join(";")
     }
 
     pub fn sign1(&self, iv: &[u8], from_id: &str, to_id: &str, amount: u32) -> Result<Vec<u8>> {
@@ -789,10 +799,18 @@ impl Challenge49Oracle {
     }
 
     fn sign_internal(&self, iv: &[u8], from_id: &str, to_id: &str, amount: u32) -> Result<Vec<u8>> {
-        self.key.cbc_mac(iv, Self::sts1(from_id, to_id, amount).as_bytes())
+        self.key
+            .cbc_mac(iv, Self::sts1(from_id, to_id, amount).as_bytes())
     }
 
-    pub fn verify1(&self, iv: &[u8], mac: &[u8], from_id: &str, to_id: &str, amount: u32) -> Result<()> {
+    pub fn verify1(
+        &self,
+        iv: &[u8],
+        mac: &[u8],
+        from_id: &str,
+        to_id: &str,
+        amount: u32,
+    ) -> Result<()> {
         let sts = Self::sts1(from_id, to_id, amount);
         ensure!(self.verify_mac(iv, sts.as_bytes(), mac));
         Ok(())
@@ -800,7 +818,7 @@ impl Challenge49Oracle {
 
     pub fn sign2(&self, from_id: &str, txns: &[(&str, u32)]) -> Result<Vec<u8>> {
         let sts = Self::sts2(from_id, txns);
-         self.key.cbc_mac(&[0u8; 16], sts.as_bytes())
+        self.key.cbc_mac(&[0u8; 16], sts.as_bytes())
     }
 
     pub fn verify_mac(&self, iv: &[u8], msg: &[u8], tag: &[u8]) -> bool {
@@ -813,17 +831,22 @@ impl Challenge49Oracle {
 }
 
 pub struct Challenge51Oracle {
-    session_id: String
+    session_id: String,
 }
 
 impl Challenge51Oracle {
     pub fn new() -> Self {
-        Challenge51Oracle { session_id: "TmV2ZXIgcmV2ZWFsIHRoZSBXdS1UYW5nIFNlY3JldCE=".to_owned() }
+        Challenge51Oracle {
+            session_id: "TmV2ZXIgcmV2ZWFsIHRoZSBXdS1UYW5nIFNlY3JldCE=".to_owned(),
+        }
     }
 
     fn create_http_request(&self, p: &str) -> String {
         let len_p = p.len();
-        format!("POST / HTTP/1.1\nHost: hapless.com\nCookie: sessionid={}\nContent-Length: {}\n{}", self.session_id, len_p, p)
+        format!(
+            "POST / HTTP/1.1\nHost: hapless.com\nCookie: sessionid={}\nContent-Length: {}\n{}",
+            self.session_id, len_p, p
+        )
     }
 
     pub fn oracle1(&self, p: &str) -> Result<usize> {

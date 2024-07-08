@@ -1,5 +1,196 @@
+use std::{collections::HashMap, fmt::Display, iter, slice::Iter, sync::mpsc::channel};
+
+use hex::ToHex;
+
+use crate::{aes::AesKey, digest::Digest, padding::Padding};
+use anyhow::Result;
+use itertools::Itertools;
+use rand::RngCore;
+use rand_core::OsRng;
+use workerpool::{
+    thunk::{Thunk, ThunkWorker},
+    Pool,
+};
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RD0 {
+    initial: [u8; 2],
+    state: [u8; 2],
+    buffer: Option<Vec<u8>>,
+}
+
+impl RD0 {
+    fn compress(old_state: &[u8], block: &[u8]) -> Vec<u8> {
+        let mut key = vec![];
+        key.extend_from_slice(old_state);
+        key.resize(16, 0);
+        let aes = AesKey::new(&key).unwrap();
+        let mut long_state = aes.encrypt_block(block);
+        long_state.resize(2, 0);
+        long_state
+        // vec![0u8; 2]
+    }
+}
+
+impl Digest for RD0 {
+    fn reset(&mut self) {
+        self.state = self.initial;
+    }
+
+    fn update(&mut self, input: &[u8]) {
+        let mut merged = self.buffer.take().unwrap_or_default();
+        merged.extend(input);
+        for block in merged.chunks(Self::block_size()) {
+            if block.len() != Self::block_size() {
+                self.buffer = Some(block.to_owned());
+            } else {
+                let new_state = Self::compress(&self.state, block);
+                self.state.copy_from_slice(&new_state);
+            }
+        }
+    }
+
+    fn digest(&mut self) -> Vec<u8> {
+        let remaining = self.buffer.take().unwrap_or_default();
+        let padded = Padding::Pkcs7Padding(Self::block_size())
+            .pad(&remaining)
+            .unwrap();
+        let result = Self::compress(&self.state, &padded);
+        self.reset();
+        result
+    }
+
+    fn digest_size() -> usize {
+        2
+    }
+
+    fn block_size() -> usize {
+        16
+    }
+
+    fn oid() -> Option<&'static asn1::ObjectIdentifier<'static>> {
+        None
+    }
+}
+
+impl Display for RD0 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.state.encode_hex::<String>())
+    }
+}
+
+fn find_collision<D>(
+    block_size: usize,
+    start: &[u8],
+    compress: D,
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, usize)>
+where
+    D: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
+    let pool_size = 4;
+
+    let pool: Pool<ThunkWorker<(Vec<u8>, Vec<u8>)>> = Pool::new(pool_size);
+    let (tx, rx) = channel();
+    let mut rnd = OsRng;
+    let mut results: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+    let mut count = 0;
+    loop {
+        for _ in 0..(pool_size * 2) {
+            let mut input = vec![0u8; block_size];
+            rnd.fill_bytes(&mut input);
+            let tmp = start.to_owned();
+            pool.execute_to(
+                tx.clone(),
+                Thunk::of(move || (compress(&tmp, &input), input)),
+            );
+        }
+        for r in rx.iter().take(pool_size * 2) {
+            count += 1;
+            let output = r.0;
+            let input = r.1;
+            // println!("Compress({}) = {}", input.encode_hex::<String>(), output.encode_hex::<String>());
+            if let Some(collision) = results.get(&output) {
+                return Ok((collision.to_owned(), input, output, count));
+            } else {
+                results.insert(output, input);
+            }
+        }
+    }
+}
+
+fn find_2n_collisions<D>(
+    n: usize,
+    block_size: usize,
+    start: &[u8],
+    compress: D,
+) -> Result<(Vec<Vec<Vec<u8>>>, usize)>
+where
+    D: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
+    let mut pairs: Vec<Vec<Vec<u8>>> = vec![];
+    let mut count = 0;
+
+    let mut current_state = start.to_owned();
+    for _ in 0..n {
+        let collision = find_collision(block_size, &current_state, compress)?;
+        count += collision.3;
+        current_state.copy_from_slice(&collision.2);
+        pairs.push(vec![collision.0, collision.1]);
+    }
+
+    let tmp = pairs
+        .iter()
+        .map(|v| v.iter())
+        .multi_cartesian_product()
+        .map(|i| {
+            let mut result = i[0].clone();
+            result.extend_from_slice(&i[1]);
+            result
+        });
+    Ok((pairs, count))
+}
+
+fn pairs_to_product(pairs: &[Vec<Vec<u8>>]) -> impl Iterator<Item = Vec<u8>> + '_  {
+    // println!("{:?}", pairs);
+    // pairs
+    // .iter()
+    // .map(|v| v.iter())
+    // .multi_cartesian_product()
+    // .enumerate()
+    // .for_each(|i| {
+    //     println!("{:?}: {:?}", i.0, i.1.into_iter().cloned().concat());
+    //     // let mut result = i[0].clone();
+    //     // result.extend_from_slice(i[1]);
+    //     // result
+    // });
+    pairs
+        .iter()
+        .map(|v| v.iter())
+        .multi_cartesian_product()
+        .map(|i| {
+            i.into_iter().cloned().concat()
+        })
+}
+// fn expand_collisions(collisions: &mut Iter<(Vec<u8>, Vec<u8>)>) -> Box<dyn Iterator<Item = Vec<u8>>> {
+//     if let Some((a, b)) = collisions.next() {
+//         let result = expand_collisions(collisions).flat_map(|tail| {
+//             let first = a.to_owned().extend(&tail);
+//             let second = b.to_owned().extend(&tail);
+//             vec![
+//                 first,
+//                 second
+//             ].iter()
+//         });
+//         Box::new(result.into_iter())
+//     } else {
+//         Box::new(itertools::repeat_n(vec![], 0))
+//     }
+// }
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use crate::{
         aes::AesKey,
         oracles::{Challenge49Oracle, Challenge51Oracle},
@@ -8,6 +199,8 @@ mod tests {
     };
     use anyhow::{Context, Result};
     use itertools::Itertools;
+
+    use super::*;
 
     #[test]
     fn challenge49_1() -> Result<()> {
@@ -133,7 +326,7 @@ mod tests {
 
         while guess.last().unwrap_or(&'A') != &'=' {
             let mut best_guess = '?';
-            let mut best_guess_value: usize = usize::MAX;
+            let mut best_guess_value: usize;
             for first_guess in base64_chars.chars() {
                 for second_guess in base64_chars.chars() {
                     let full_guess = format!(
@@ -181,12 +374,17 @@ mod tests {
 
         // Find initial padding
         let mut initial_padding = "".to_string();
-        let no_padded_guess_len = oracle.oracle2(&format!("{}Cookie: sessionid={}", &initial_padding, junk))?;
+        let no_padded_guess_len =
+            oracle.oracle2(&format!("{}Cookie: sessionid={}", &initial_padding, junk))?;
         println!("No padding length {}", no_padded_guess_len);
         for j in pad_src.chars() {
             initial_padding += &j.to_string();
-            let padded_guess_len = oracle.oracle2(&format!("{}Cookie: sessionid={}", &initial_padding, junk))?;
-            println!("Trying padding {} with length {}", &initial_padding, padded_guess_len);
+            let padded_guess_len =
+                oracle.oracle2(&format!("{}Cookie: sessionid={}", &initial_padding, junk))?;
+            println!(
+                "Trying padding {} with length {}",
+                &initial_padding, padded_guess_len
+            );
             if padded_guess_len > no_padded_guess_len {
                 initial_padding.pop();
                 initial_padding.pop();
@@ -199,7 +397,7 @@ mod tests {
 
         while guess.last().unwrap_or(&'A') != &'=' {
             let mut best_guess = '?';
-            let mut best_guess_value: usize = usize::MAX;
+            let mut best_guess_value: usize;
             for first_guess in base64_chars.chars() {
                 for second_guess in base64_chars.chars() {
                     let full_guess = format!(
@@ -231,7 +429,7 @@ mod tests {
                     }
                 }
             }
-            if (best_guess == '?') {
+            if best_guess == '?' {
                 initial_padding.pop();
                 println!("New prefix: {}", initial_padding);
             } else {
@@ -243,5 +441,54 @@ mod tests {
         let final_guess = guess.iter().join("");
         println!("Final guess: {}", final_guess);
         oracle.check(&final_guess)
+    }
+
+    #[test]
+    fn challenge52_smoke() -> Result<()> {
+        let mut dgst = RD0::default();
+
+        dgst.update(b"Greg");
+        println!("rd0(\"Greg\") = {}", dgst.digest().encode_hex::<String>());
+        dgst.update(b"Sarah");
+        println!("rd0(\"Sarah\") = {}", dgst.digest().encode_hex::<String>());
+        dgst.update(b"Greg");
+        println!("rd0(\"Greg\") = {}", dgst.digest().encode_hex::<String>());
+        dgst.update(b"Sarah");
+        println!("rd0(\"Sarah\") = {}", dgst.digest().encode_hex::<String>());
+
+        let collisions = find_collision(RD0::block_size(), &[0u8; 2], RD0::compress)?;
+
+        dgst.update(&collisions.0);
+        println!(
+            "rd0({}) = {}",
+            &collisions.0.encode_hex::<String>(),
+            dgst.digest().encode_hex::<String>()
+        );
+        dgst.update(&collisions.1);
+        println!(
+            "rd0({}) = {}",
+            &collisions.1.encode_hex::<String>(),
+            dgst.digest().encode_hex::<String>()
+        );
+        println!("Took {} compressions!", collisions.3);
+        Ok(())
+    }
+
+    #[test]
+    fn challenge52_1() -> Result<()> {
+        let mut dgst = RD0::default();
+        let collisions = find_2n_collisions(10, RD0::block_size(), &[0u8; 2], RD0::compress)?;
+        let mut seen: HashSet<Vec<u8>> = HashSet::new();
+        for c in pairs_to_product(&collisions.0) {
+            dgst.update(&c);
+            println!(
+                "rd0({}) = {}",
+                &c.encode_hex::<String>(),
+                dgst.digest().encode_hex::<String>()
+            );
+            assert!(seen.insert(c));
+        }
+        println!("Took {} compressions!", collisions.1);
+        Ok(())
     }
 }

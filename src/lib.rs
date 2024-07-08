@@ -154,7 +154,7 @@ fn hamming_weight(a: &[u8], b: &[u8]) -> (u32, f64) {
     lazy_static! {
         static ref WEIGHTS: [u8; 256] = {
             let mut weights = [0u8; 256];
-            #[allow(clippy::clippy::needless_range_loop)]
+            #[allow(clippy::needless_range_loop)]
             for i in 0..256 {
                 let mut tmp = 0;
                 if i & 1 != 0 {
