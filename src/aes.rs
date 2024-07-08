@@ -123,7 +123,7 @@ impl AesKey {
             .flat_map(|pt_block| {
                 let xored = xor(&previous_block, pt_block);
                 let ct_block = self.encrypt_block(&xored);
-                println!("Hex: {}", hex::encode(xored));
+                // println!("Hex: {}", hex::encode(xored));
                 previous_block.copy_from_slice(&ct_block);
                 ct_block
             })

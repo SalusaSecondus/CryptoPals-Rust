@@ -837,6 +837,18 @@ impl Challenge51Oracle {
         Ok(ciphertext.len())
     }
 
+    pub fn oracle2(&self, p: &str) -> Result<usize> {
+        let request = self.create_http_request(p);
+        // println!("{}", request);
+        let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        e.write_all(request.as_bytes())?;
+        let plaintext = e.finish()?;
+        let key = AesKey::rand_key(128)?;
+        let padded = Padding::Pkcs7Padding(16).pad(&plaintext)?;
+        let ciphertext = key.encrypt_cbc(&[0u8; 16], &padded)?;
+        Ok(ciphertext.len())
+    }
+
     pub fn check(&self, guess: &str) -> Result<()> {
         ensure!(self.session_id == guess);
         Ok(())

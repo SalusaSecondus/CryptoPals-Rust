@@ -122,11 +122,10 @@ mod tests {
     }
 
     #[test]
-    // #[ignore = "slow"]
-    fn challenge51() -> Result<()> {
+    fn challenge51_1() -> Result<()> {
         let base64_chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/=";
         let oracle = Challenge51Oracle::new();
-        let junk = "#!?:@&[]^";
+        let junk: &str = "#!?:@&[]^";
         println!("Length: {}", oracle.oracle1("sessionid=A")?);
         println!("Length: {}", oracle.oracle1("sessionid=T")?);
 
@@ -166,6 +165,79 @@ mod tests {
             }
             guess.push(best_guess);
             println!("Guessing {}", best_guess);
+            // todo!();
+        }
+        let final_guess = guess.iter().join("");
+        println!("Final guess: {}", final_guess);
+        oracle.check(&final_guess)
+    }
+
+    #[test]
+    fn challenge51_2() -> Result<()> {
+        let base64_chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/=";
+        let oracle = Challenge51Oracle::new();
+        let pad_src = "#!?{}:/@&[}*],^-$\"_';|,/.#-?]@[^*_!\\}{";
+        let junk: &str = "#!?:@&[]^-$\"';|,.";
+
+        // Find initial padding
+        let mut initial_padding = "".to_string();
+        let no_padded_guess_len = oracle.oracle2(&format!("{}Cookie: sessionid={}", &initial_padding, junk))?;
+        println!("No padding length {}", no_padded_guess_len);
+        for j in pad_src.chars() {
+            initial_padding += &j.to_string();
+            let padded_guess_len = oracle.oracle2(&format!("{}Cookie: sessionid={}", &initial_padding, junk))?;
+            println!("Trying padding {} with length {}", &initial_padding, padded_guess_len);
+            if padded_guess_len > no_padded_guess_len {
+                initial_padding.pop();
+                initial_padding.pop();
+                println!("Using padding {}", &initial_padding);
+                break;
+            }
+        }
+
+        let mut guess: Vec<char> = vec![];
+
+        while guess.last().unwrap_or(&'A') != &'=' {
+            let mut best_guess = '?';
+            let mut best_guess_value: usize = usize::MAX;
+            for first_guess in base64_chars.chars() {
+                for second_guess in base64_chars.chars() {
+                    let full_guess = format!(
+                        "{}Cookie: sessionid={}{}{}{}",
+                        initial_padding,
+                        guess.iter().join(""),
+                        junk,
+                        first_guess,
+                        second_guess
+                    );
+                    let len2 = oracle.oracle2(&full_guess)?;
+                    let full_guess = format!(
+                        "{}Cookie: sessionid={}{}{}{}",
+                        initial_padding,
+                        guess.iter().join(""),
+                        first_guess,
+                        second_guess,
+                        junk
+                    );
+                    let len1 = oracle.oracle2(&full_guess)?;
+                    // println!("{}{}? {} <> {}", first_guess, second_guess, len1, len2);
+                    if len1 < len2 {
+                        best_guess = first_guess;
+                        best_guess_value = len1;
+                        println!(
+                            "{} -> {}: (Best: {} = {})",
+                            full_guess, len1, best_guess, best_guess_value
+                        );
+                    }
+                }
+            }
+            if (best_guess == '?') {
+                initial_padding.pop();
+                println!("New prefix: {}", initial_padding);
+            } else {
+                guess.push(best_guess);
+                println!("Guessing {}", best_guess);
+            }
             // todo!();
         }
         let final_guess = guess.iter().join("");
