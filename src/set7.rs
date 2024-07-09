@@ -1,10 +1,14 @@
-use std::{collections::HashMap, convert::TryInto, fmt::Display, sync::mpsc::channel};
+use std::{collections::HashMap, fmt::Display, sync::mpsc::channel};
 
 use hex::ToHex;
-use num_traits::{ToBytes, ToPrimitive};
+use num_traits::ToPrimitive;
 
-use crate::{aes::AesKey, digest::Digest, padding::Padding};
-use anyhow::Result;
+use crate::{
+    aes::AesKey,
+    digest::Digest,
+    padding::Padding,
+};
+use anyhow::{ensure, Result};
 use itertools::Itertools;
 use rand::RngCore;
 use rand_core::OsRng;
@@ -85,7 +89,6 @@ impl Display for RD0 {
     }
 }
 
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RD1 {
     initial: [u8; 4],
@@ -161,7 +164,7 @@ impl Display for RD1 {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct RD2 {
     rd0: RD0,
-    rd1: RD1
+    rd1: RD1,
 }
 
 impl Digest for RD2 {
@@ -233,6 +236,139 @@ where
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ExpandCollision {
+    short: Vec<u8>,
+    long: Vec<u8>,
+    h_in: Vec<u8>,
+    h_out: Vec<u8>,
+    compressions: usize,
+}
+
+fn find_collision_expand<C>(
+    alpha: usize,
+    h_in: &[u8],
+    block_size: usize,
+    compress: C,
+) -> Result<ExpandCollision>
+where
+    C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
+    let q = vec![0u8; block_size];
+    let mut long = vec![0u8; (alpha - 1) * RD1::block_size()];
+    let mut h_tmp = h_in.to_owned();
+    let mut compressions = 0;
+    for _ in 0..(alpha - 1) {
+        compressions += 1;
+        h_tmp = compress(&h_tmp, &q);
+    }
+
+    let mut rng = OsRng;
+
+    let mut a_short: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+    let mut b_long: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+    let mut block = vec![0u8; block_size];
+    loop {
+        rng.fill_bytes(&mut block);
+        // println!("Trying block: {:?}", block);
+        let a_i = compress(h_in, &block);
+        compressions += 1;
+        let b_i = compress(&h_tmp, &block);
+        compressions += 1;
+
+        // println!("a_i = {:?}", a_i);
+        // println!("b_i = {:?}", b_i);
+
+        if let Some(old_short) = a_short.get(&b_i) {
+            long.extend(&block);
+            return Ok(ExpandCollision {
+                short: old_short.to_owned(),
+                long,
+                h_in: h_in.to_owned(),
+                h_out: b_i,
+                compressions,
+            });
+        }
+        if let Some(old_long) = b_long.get(&a_i) {
+            long.extend(old_long);
+            return Ok(ExpandCollision {
+                short: block,
+                long,
+                h_in: h_in.to_owned(),
+                h_out: a_i,
+                compressions,
+            });
+        }
+        if a_i == b_i {
+            long.extend(&block);
+            return Ok(ExpandCollision {
+                short: block,
+                long,
+                h_in: h_in.to_owned(),
+                h_out: b_i,
+                compressions,
+            });
+        }
+        a_short.insert(a_i, block.clone());
+        b_long.insert(b_i, block.clone());
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct ExpandableMessage {
+    h_out: Vec<u8>,
+    pairs: Vec<(Vec<u8>, Vec<u8>)>,
+    compressions: usize
+}
+
+fn make_expandable_message<C>(
+    h_in: &[u8],
+    k: usize,
+    block_size: usize,
+    compress: C,
+) -> Result<ExpandableMessage>
+where
+    C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
+    let mut h_tmp = h_in.to_owned();
+    let mut pairs = vec![(vec![], vec![]); k];
+
+    let mut compressions = 0;
+    for i in (0..=(k - 1)).rev() {
+        let alpha = (1 << i) + 1;
+        let step = find_collision_expand(alpha, &h_tmp, block_size, compress)?;
+        pairs[k - i - 1].0 = step.short;
+        pairs[k - i - 1].1 = step.long;
+        h_tmp = step.h_out;
+        compressions += step.compressions;
+    }
+
+    Ok(ExpandableMessage {
+        h_out: h_tmp.to_owned(),
+        pairs,
+        compressions
+    })
+}
+
+fn expand_message(expandable_message: &ExpandableMessage, l: usize) -> Result<Vec<u8>> {
+    let k = expandable_message.pairs.len();
+    ensure!(l >= k);
+    ensure!(l <= (1 << k) + k - 1);
+
+    let mut m = vec![];
+    let mut t = l - k;
+
+    for (i, pair) in expandable_message.pairs.iter().enumerate()  {
+        let edge = 1 << (k - 1 - i);
+        if t >= edge {
+            m.extend(&pair.1);
+            t -= edge;
+        } else {
+            m.extend(&pair.0);
+        }
+    }
+    Ok(m)
+}
 fn find_2n_collisions<D>(
     n: usize,
     block_size: usize,
@@ -255,46 +391,17 @@ where
     Ok((pairs, count))
 }
 
-fn pairs_to_product(pairs: &[Vec<Vec<u8>>]) -> impl Iterator<Item = Vec<u8>> + '_  {
-    // println!("{:?}", pairs);
-    // pairs
-    // .iter()
-    // .map(|v| v.iter())
-    // .multi_cartesian_product()
-    // .enumerate()
-    // .for_each(|i| {
-    //     println!("{:?}: {:?}", i.0, i.1.into_iter().cloned().concat());
-    //     // let mut result = i[0].clone();
-    //     // result.extend_from_slice(i[1]);
-    //     // result
-    // });
+fn pairs_to_product(pairs: &[Vec<Vec<u8>>]) -> impl Iterator<Item = Vec<u8>> + '_ {
     pairs
         .iter()
         .map(|v| v.iter())
         .multi_cartesian_product()
-        .map(|i| {
-            i.into_iter().cloned().concat()
-        })
+        .map(|i| i.into_iter().cloned().concat())
 }
-// fn expand_collisions(collisions: &mut Iter<(Vec<u8>, Vec<u8>)>) -> Box<dyn Iterator<Item = Vec<u8>>> {
-//     if let Some((a, b)) = collisions.next() {
-//         let result = expand_collisions(collisions).flat_map(|tail| {
-//             let first = a.to_owned().extend(&tail);
-//             let second = b.to_owned().extend(&tail);
-//             vec![
-//                 first,
-//                 second
-//             ].iter()
-//         });
-//         Box::new(result.into_iter())
-//     } else {
-//         Box::new(itertools::repeat_n(vec![], 0))
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, hash::Hash};
+    use std::collections::HashSet;
 
     use crate::{
         aes::AesKey,
@@ -610,7 +717,7 @@ mod tests {
         Ok(())
     }
 
-#[test]
+    #[test]
     fn challenge52_smoke3() -> Result<()> {
         let mut dgst = RD2::default();
 
@@ -647,7 +754,7 @@ mod tests {
     #[test]
     fn challenge52_2() -> Result<()> {
         let collisions = find_2n_collisions(20, RD0::block_size(), &[0u8; 2], RD0::compress)?;
-        let mut seen : HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut seen: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
         println!("Took {} compressions!", collisions.1);
         let mut compressions = collisions.1;
 
@@ -662,14 +769,67 @@ mod tests {
                 let dgst1 = rd2.digest();
                 rd2.update(&c);
                 let dgst2 = rd2.digest();
-                println!("rd2({}) -> {}", other.encode_hex::<String>(), dgst1.encode_hex::<String>());
-                println!("rd2({}) -> {}", c.encode_hex::<String>(), dgst2.encode_hex::<String>());
+                println!(
+                    "rd2({}) -> {}",
+                    other.encode_hex::<String>(),
+                    dgst1.encode_hex::<String>()
+                );
+                println!(
+                    "rd2({}) -> {}",
+                    c.encode_hex::<String>(),
+                    dgst2.encode_hex::<String>()
+                );
                 println!("Took {} compressions!", compressions);
                 assert_ne!(other, &c);
                 assert_eq!(dgst1, dgst2);
                 break;
             } else {
                 seen.insert(dgst, c);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn challenge53_smoke() -> Result<()> {
+        let result = find_collision_expand(3, &[0u8; 16], 16, RD1::compress)?;
+        let mut digest = RD1::default();
+        digest.update(&result.short);
+        println!("{:?}", digest);
+        digest.reset();
+        digest.update(&result.long);
+        println!("{:?}", digest);
+        println!("{:?}", result);
+
+        let k = 10;
+        let expandable_message = make_expandable_message(&[0u8; 16], k, 16, RD1::compress)?;
+        // println!("{:?}", expandable_message);
+        digest.reset();
+        for c in expandable_message.pairs.iter() {
+            digest.update(&c.0);
+        }
+        println!("{:?}", digest);
+        digest.reset();
+        for c in expandable_message.pairs.iter() {
+            digest.update(&c.1);
+        }
+        println!("{:?}", digest);
+
+
+        let limit = (1<<k) + k - 1;
+        println!("Actually expanding");
+        let mut expected = None;
+        for len in k..=limit {
+            let m = expand_message(&expandable_message, len)?;
+            // println!("m = {}", m.encode_hex::<String>());
+            assert_eq!(len * RD1::block_size(), m.len());
+            digest.reset();
+            digest.update(&m);
+            // println!("{:?}", digest);
+            if let Some(expected) = expected {
+                assert_eq!(expected, digest.state);
+            } else {
+                expected = Some(digest.state);
             }
         }
         Ok(())
