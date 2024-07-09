@@ -3,11 +3,7 @@ use std::{collections::HashMap, fmt::Display, sync::mpsc::channel};
 use hex::ToHex;
 use num_traits::ToPrimitive;
 
-use crate::{
-    aes::AesKey,
-    digest::Digest,
-    padding::Padding,
-};
+use crate::{aes::AesKey, digest::Digest, padding::Padding};
 use anyhow::{ensure, Result};
 use itertools::Itertools;
 use rand::RngCore;
@@ -318,7 +314,7 @@ where
 struct ExpandableMessage {
     h_out: Vec<u8>,
     pairs: Vec<(Vec<u8>, Vec<u8>)>,
-    compressions: usize
+    compressions: usize,
 }
 
 fn make_expandable_message<C>(
@@ -346,7 +342,7 @@ where
     Ok(ExpandableMessage {
         h_out: h_tmp.to_owned(),
         pairs,
-        compressions
+        compressions,
     })
 }
 
@@ -358,7 +354,7 @@ fn expand_message(expandable_message: &ExpandableMessage, l: usize) -> Result<Ve
     let mut m = vec![];
     let mut t = l - k;
 
-    for (i, pair) in expandable_message.pairs.iter().enumerate()  {
+    for (i, pair) in expandable_message.pairs.iter().enumerate() {
         let edge = 1 << (k - 1 - i);
         if t >= edge {
             m.extend(&pair.1);
@@ -369,6 +365,76 @@ fn expand_message(expandable_message: &ExpandableMessage, l: usize) -> Result<Ve
     }
     Ok(m)
 }
+
+fn second_preimage<C>(m: &[u8], h_in: &[u8], block_size: usize, compress: C) -> Result<(Vec<u8>, usize)>
+where
+    C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
+    ensure!(m.len() % block_size == 0);
+    let mut compression_count = 0;
+    // Step 1: Figure out minimum k such that len(m) / block_size \in [k, k + 2^k - 1]
+    let m_block_count = m.len() / block_size;
+    let mut k = 1;
+    while m_block_count > k + (1<<k) - 1 {
+        println!("K? = {}", k);
+        k += 1;
+    }
+    let k = k;
+    println!("Step 1: k = {}", k);
+
+    // Step 2: Create expandable message
+    let expandable_message = make_expandable_message(h_in, k, block_size, compress)?;
+    compression_count += expandable_message.compressions;
+    println!("Step 2: Expandable message out = {}", expandable_message.h_out.encode_hex::<String>());
+
+    // Step 3: Intermediate hash states
+    let mut intermediate_hash_states: HashMap<Vec<u8>, usize> = HashMap::new();
+    let mut intermediate_state = h_in.to_vec();
+    for (i, block) in m.chunks_exact(block_size).enumerate() {
+        intermediate_state = compress(&intermediate_state, block);
+        compression_count += 1;
+        if i > k {
+            intermediate_hash_states.insert(intermediate_state.clone(), i + 1);
+        }
+    }
+    println!("Step 3: intermediate hash states {}", intermediate_hash_states.len());
+
+    // Step 4: Find bridge block
+    let mut bridge = vec![0u8; block_size];
+    let mut rng = OsRng;
+    compression_count += 1;
+    while !intermediate_hash_states.contains_key(&compress(&expandable_message.h_out, &bridge)) {
+        compression_count += 1;
+        rng.fill_bytes(&mut bridge);
+    }
+    compression_count += 1;
+    let i = *intermediate_hash_states.get(&compress(&expandable_message.h_out, &bridge)).unwrap();
+    println!("Step 4: Bridge block {}", bridge.encode_hex::<String>());
+
+    // Step 5: Build expanded message of length 1
+    let mut result = expand_message(&expandable_message, i - 1)?;
+
+    // (Check we're good but don't count these compressions against our total
+    {
+        let mut h_check = h_in.to_vec();
+        for block in result.chunks_exact(block_size) {
+            h_check = compress(&h_check, block);
+        }
+        ensure!(h_check == expandable_message.h_out, "Intermediate state check failed");
+        ensure!(result.len() == (i - 1) * block_size);
+    }
+
+    // Add bridge block
+    result.extend_from_slice(&bridge);
+
+    // Add the rest!
+    result.extend_from_slice(&m[(block_size*i)..]);
+
+    ensure!(result.len() == m.len());
+
+    Ok((result, compression_count))
+}
+
 fn find_2n_collisions<D>(
     n: usize,
     block_size: usize,
@@ -791,6 +857,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "smoke"]
     fn challenge53_smoke() -> Result<()> {
         let result = find_collision_expand(3, &[0u8; 16], 16, RD1::compress)?;
         let mut digest = RD1::default();
@@ -815,8 +882,7 @@ mod tests {
         }
         println!("{:?}", digest);
 
-
-        let limit = (1<<k) + k - 1;
+        let limit = (1 << k) + k - 1;
         println!("Actually expanding");
         let mut expected = None;
         for len in k..=limit {
@@ -832,6 +898,34 @@ mod tests {
                 expected = Some(digest.state);
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn challenge53() -> Result<()> {
+        let mut rd1 = RD1::default();
+        let mut rng = OsRng;
+        let mut msg = vec![0u8; RD1::block_size() * (1 << 20)];
+        rng.fill_bytes(&mut msg);
+        rd1.update(&msg);
+        let expected_hash = rd1.digest();
+
+        let preimage = second_preimage(&msg, &rd1.initial, RD1::block_size(), RD1::compress)?;
+        rd1.update(&preimage.0);
+        let actual_hash = rd1.digest();
+
+        assert_eq!(expected_hash, actual_hash);
+        assert_ne!(msg, preimage.0);
+
+        rd1.reset();
+        rd1.update(&msg);
+        println!("rd1(..) -> {}", rd1.digest().encode_hex::<String>());
+
+        rd1.reset();
+        rd1.update(&preimage.0);
+        println!("rd1(..) -> {}", rd1.digest().encode_hex::<String>());
+
+        println!("compressions executed: {}", preimage.1);
         Ok(())
     }
 }
