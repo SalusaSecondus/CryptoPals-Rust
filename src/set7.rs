@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, sync::mpsc::channel};
+use std::{collections::HashMap, fmt::Display, hash::Hash, sync::mpsc::channel};
 
 use hex::ToHex;
 use num_traits::ToPrimitive;
@@ -465,6 +465,79 @@ fn pairs_to_product(pairs: &[Vec<Vec<u8>>]) -> impl Iterator<Item = Vec<u8>> + '
         .map(|i| i.into_iter().cloned().concat())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct NostradamusElement {
+    h_in: Vec<u8>,
+    bridge: Vec<u8> 
+}
+fn build_nostradamus_tail_parts<C>(k: usize, block_size: usize, compress_size: usize, compress: C) -> Result<Vec<NostradamusElement>>
+where C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8> {
+    let mut result = vec![];
+    result.resize((1 << (k - 1)), NostradamusElement{h_in: vec![0u8; compress_size], bridge: vec![0u8; block_size]});
+    let mut compressions = 0;
+
+    // Step 1: Generate random initial states
+    let mut rng = OsRng;
+    for (idx, element) in result.iter_mut().enumerate().tail(k) {
+        println!("Filling {}", idx);
+        rng.fill_bytes(&mut element.h_in);
+    }
+
+    // Step 2: Collide them down
+    for idx in (3..result.len()).rev().step_by(2) {
+        let dest_idx = (idx - 1) / 2;
+
+        println!("Mapping ({}, {}) -> {}", idx, idx - 1, dest_idx);
+        let mut a_outs: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut b_outs: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut block = vec![0u8; block_size];
+        let a_in = &result[idx].h_in;
+        let b_in = &result[idx - 1].h_in;
+
+        loop {
+            rng.fill_bytes(&mut block);
+            // println!("Trying block: {:?}", block);
+            let a_i = compress(a_in, &block);
+            compressions += 1;
+            let b_i = compress(b_in, &block);
+            compressions += 1;
+    
+            // println!("a_i = {:?}", a_i);
+            // println!("b_i = {:?}", b_i);
+    
+            if let Some(old_a) = a_outs.get(&b_i) {
+                result[idx].bridge.copy_from_slice(&old_a);
+                result[idx-1].bridge.copy_from_slice(&block);
+                result[dest_idx].h_in.copy_from_slice(&b_i);
+                break;
+            } else if let Some(old_b) = b_outs.get(&a_i) {
+                result[idx-1].bridge.copy_from_slice(&old_b);
+                result[idx].bridge.copy_from_slice(&block);
+                result[dest_idx].h_in.copy_from_slice(&a_i);
+                break;
+            } else if a_i == b_i {
+                result[idx].bridge.copy_from_slice(&block);
+                result[idx-1].bridge.copy_from_slice(&block);
+                result[dest_idx].h_in.copy_from_slice(&a_i);
+                break;
+            }
+            a_outs.insert(a_i, block.clone());
+            b_outs.insert(b_i, block.clone());
+        }
+    }
+    Ok(result)
+}
+
+fn build_nostradamus_tail(parts: &[NostradamusElement], start: usize) -> Vec<u8> {
+    let mut result = vec![];
+    let mut idx = start;
+    while idx > 1 {
+        result.extend(&parts[idx].bridge);
+        idx = idx / 2;
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -926,6 +999,35 @@ mod tests {
         println!("rd1(..) -> {}", rd1.digest().encode_hex::<String>());
 
         println!("compressions executed: {}", preimage.1);
+        Ok(())
+    }
+
+    #[test]
+    fn challenge54_smoke() -> Result<()> {
+        let k = 4;
+        let tail = build_nostradamus_tail_parts(k, RD1::block_size(), RD1::digest_size(), RD1::compress)?;
+
+        println!("{:?}", tail);
+
+        let mut rd1 = RD1::default();
+        for (idx, elem) in tail.iter().enumerate().skip(1).rev() {
+            println!("{}: {:?}", idx, elem);
+            rd1.reset();
+            rd1.state.copy_from_slice(&elem.h_in);
+            rd1.update(&elem.bridge);
+            println!("\t{:?}", rd1.state);
+        }
+
+        println!();
+        for idx in k..(2*k) {
+            rd1.reset();
+            rd1.state.copy_from_slice(&tail[idx].h_in);
+            let tmp = build_nostradamus_tail(&tail, idx);
+            println!("{}, {:?}", idx, tmp);
+            rd1.update(&tmp);
+            println!("\t{:?}", rd1.state);
+            assert_eq!(rd1.state.to_vec(), tail[1].h_in);
+        }
         Ok(())
     }
 }
