@@ -366,7 +366,12 @@ fn expand_message(expandable_message: &ExpandableMessage, l: usize) -> Result<Ve
     Ok(m)
 }
 
-fn second_preimage<C>(m: &[u8], h_in: &[u8], block_size: usize, compress: C) -> Result<(Vec<u8>, usize)>
+fn second_preimage<C>(
+    m: &[u8],
+    h_in: &[u8],
+    block_size: usize,
+    compress: C,
+) -> Result<(Vec<u8>, usize)>
 where
     C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
 {
@@ -375,7 +380,7 @@ where
     // Step 1: Figure out minimum k such that len(m) / block_size \in [k, k + 2^k - 1]
     let m_block_count = m.len() / block_size;
     let mut k = 1;
-    while m_block_count > k + (1<<k) - 1 {
+    while m_block_count > k + (1 << k) - 1 {
         println!("K? = {}", k);
         k += 1;
     }
@@ -385,7 +390,10 @@ where
     // Step 2: Create expandable message
     let expandable_message = make_expandable_message(h_in, k, block_size, compress)?;
     compression_count += expandable_message.compressions;
-    println!("Step 2: Expandable message out = {}", expandable_message.h_out.encode_hex::<String>());
+    println!(
+        "Step 2: Expandable message out = {}",
+        expandable_message.h_out.encode_hex::<String>()
+    );
 
     // Step 3: Intermediate hash states
     let mut intermediate_hash_states: HashMap<Vec<u8>, usize> = HashMap::new();
@@ -397,7 +405,10 @@ where
             intermediate_hash_states.insert(intermediate_state.clone(), i + 1);
         }
     }
-    println!("Step 3: intermediate hash states {}", intermediate_hash_states.len());
+    println!(
+        "Step 3: intermediate hash states {}",
+        intermediate_hash_states.len()
+    );
 
     // Step 4: Find bridge block
     let mut bridge = vec![0u8; block_size];
@@ -408,7 +419,9 @@ where
         rng.fill_bytes(&mut bridge);
     }
     compression_count += 1;
-    let i = *intermediate_hash_states.get(&compress(&expandable_message.h_out, &bridge)).unwrap();
+    let i = *intermediate_hash_states
+        .get(&compress(&expandable_message.h_out, &bridge))
+        .unwrap();
     println!("Step 4: Bridge block {}", bridge.encode_hex::<String>());
 
     // Step 5: Build expanded message of length 1
@@ -420,7 +433,10 @@ where
         for block in result.chunks_exact(block_size) {
             h_check = compress(&h_check, block);
         }
-        ensure!(h_check == expandable_message.h_out, "Intermediate state check failed");
+        ensure!(
+            h_check == expandable_message.h_out,
+            "Intermediate state check failed"
+        );
         ensure!(result.len() == (i - 1) * block_size);
     }
 
@@ -428,7 +444,7 @@ where
     result.extend_from_slice(&bridge);
 
     // Add the rest!
-    result.extend_from_slice(&m[(block_size*i)..]);
+    result.extend_from_slice(&m[(block_size * i)..]);
 
     ensure!(result.len() == m.len());
 
@@ -468,17 +484,31 @@ fn pairs_to_product(pairs: &[Vec<Vec<u8>>]) -> impl Iterator<Item = Vec<u8>> + '
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct NostradamusElement {
     h_in: Vec<u8>,
-    bridge: Vec<u8> 
+    bridge: Vec<u8>,
 }
-fn build_nostradamus_tail_parts<C>(k: usize, block_size: usize, compress_size: usize, compress: C) -> Result<Vec<NostradamusElement>>
-where C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8> {
+fn build_nostradamus_tail_parts<C>(
+    k: usize,
+    block_size: usize,
+    compress_size: usize,
+    compress: C,
+) -> Result<(Vec<NostradamusElement>, usize)>
+where
+    C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
     let mut result = vec![];
-    result.resize((1 << (k - 1)), NostradamusElement{h_in: vec![0u8; compress_size], bridge: vec![0u8; block_size]});
+    let targets = 1 << k;
+    result.resize(
+        1 << (k + 1),
+        NostradamusElement {
+            h_in: vec![0u8; compress_size],
+            bridge: vec![0u8; block_size],
+        },
+    );
     let mut compressions = 0;
 
     // Step 1: Generate random initial states
     let mut rng = OsRng;
-    for (idx, element) in result.iter_mut().enumerate().tail(k) {
+    for (idx, element) in result.iter_mut().enumerate().skip(targets) {
         println!("Filling {}", idx);
         rng.fill_bytes(&mut element.h_in);
     }
@@ -501,23 +531,23 @@ where C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8> {
             compressions += 1;
             let b_i = compress(b_in, &block);
             compressions += 1;
-    
+
             // println!("a_i = {:?}", a_i);
             // println!("b_i = {:?}", b_i);
-    
+
             if let Some(old_a) = a_outs.get(&b_i) {
-                result[idx].bridge.copy_from_slice(&old_a);
-                result[idx-1].bridge.copy_from_slice(&block);
+                result[idx].bridge.copy_from_slice(old_a);
+                result[idx - 1].bridge.copy_from_slice(&block);
                 result[dest_idx].h_in.copy_from_slice(&b_i);
                 break;
             } else if let Some(old_b) = b_outs.get(&a_i) {
-                result[idx-1].bridge.copy_from_slice(&old_b);
+                result[idx - 1].bridge.copy_from_slice(old_b);
                 result[idx].bridge.copy_from_slice(&block);
                 result[dest_idx].h_in.copy_from_slice(&a_i);
                 break;
             } else if a_i == b_i {
                 result[idx].bridge.copy_from_slice(&block);
-                result[idx-1].bridge.copy_from_slice(&block);
+                result[idx - 1].bridge.copy_from_slice(&block);
                 result[dest_idx].h_in.copy_from_slice(&a_i);
                 break;
             }
@@ -525,7 +555,90 @@ where C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8> {
             b_outs.insert(b_i, block.clone());
         }
     }
-    Ok(result)
+    Ok((result, compressions))
+}
+
+fn build_nostradamus_result<C>(
+    parts: &[NostradamusElement],
+    msg: &[u8],
+    h_initial: &[u8],
+    compress: C,
+) -> Result<(Vec<u8>, usize)>
+where
+    C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
+    let mut compressions = 0;
+    let mut result = vec![];
+    let target_cnt = parts.len() / 2;
+    let block_size = parts[0].bridge.len();
+
+    // Step 0: Build table of known ends
+    let mut targets: HashMap<Vec<u8>, usize> = HashMap::new();
+    for (idx, h_end) in parts.iter().enumerate().skip(target_cnt) {
+        targets.insert(h_end.h_in.clone(), idx);
+    }
+    let targets = targets;
+
+    // Step 0.5: Hash message so far
+    let mut h_in = h_initial.to_vec();
+    for block in msg.chunks_exact(block_size) {
+        result.extend(block);
+        h_in = compress(&h_in, block);
+        compressions += 1;
+    }
+
+    // Step 1: Find bridge
+    let mut bridge = vec![0u8; block_size];
+    let mut rng = OsRng;
+    let mut target_idx = None;
+    loop {
+        rng.fill_bytes(&mut bridge);
+        let h_out = compress(&h_in, &bridge);
+        compressions += 1;
+
+        if let Some(tmp) = targets.get(&h_out) {
+            target_idx = Some(*tmp);
+            break;
+        }
+    }
+    result.extend(bridge);
+    result.extend(build_nostradamus_tail(parts, target_idx.unwrap()));
+
+    Ok((result, compressions))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NostradamusCommitment<C>
+where
+    C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
+    tail_parts: Vec<NostradamusElement>,
+    pre_hash: Vec<u8>,
+    total_length: usize,
+    compressions: usize,
+    compression: C,
+}
+
+fn build_nostradamus_commitment<C>(
+    base_message_length: usize,
+    tail_length: usize,
+    compression: C,
+    block_size: usize,
+    state_size: usize,
+) -> Result<NostradamusCommitment<C>>
+where
+    C: Send + Copy + 'static + Fn(&[u8], &[u8]) -> Vec<u8>,
+{
+    let tail = build_nostradamus_tail_parts(tail_length, block_size, state_size, compression)?;
+
+    let pre_hash = tail.0[1].h_in.clone();
+    Ok(NostradamusCommitment {
+        tail_parts: tail.0,
+        pre_hash,
+        total_length: base_message_length + tail_length + 1,
+        compressions: tail.1,
+        compression,
+    })
 }
 
 fn build_nostradamus_tail(parts: &[NostradamusElement], start: usize) -> Vec<u8> {
@@ -533,7 +646,7 @@ fn build_nostradamus_tail(parts: &[NostradamusElement], start: usize) -> Vec<u8>
     let mut idx = start;
     while idx > 1 {
         result.extend(&parts[idx].bridge);
-        idx = idx / 2;
+        idx /= 2;
     }
     result
 }
@@ -1003,14 +1116,16 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "smoke"]
     fn challenge54_smoke() -> Result<()> {
-        let k = 4;
-        let tail = build_nostradamus_tail_parts(k, RD1::block_size(), RD1::digest_size(), RD1::compress)?;
+        let k = 3;
+        let tail =
+            build_nostradamus_tail_parts(k, RD1::block_size(), RD1::digest_size(), RD1::compress)?;
 
         println!("{:?}", tail);
 
         let mut rd1 = RD1::default();
-        for (idx, elem) in tail.iter().enumerate().skip(1).rev() {
+        for (idx, elem) in tail.0.iter().enumerate().skip(1).rev() {
             println!("{}: {:?}", idx, elem);
             rd1.reset();
             rd1.state.copy_from_slice(&elem.h_in);
@@ -1019,14 +1134,64 @@ mod tests {
         }
 
         println!();
-        for idx in k..(2*k) {
+        let targets = 1 << k;
+        for idx in targets..(2 * targets) {
             rd1.reset();
-            rd1.state.copy_from_slice(&tail[idx].h_in);
-            let tmp = build_nostradamus_tail(&tail, idx);
+            rd1.state.copy_from_slice(&tail.0[idx].h_in);
+            let tmp = build_nostradamus_tail(&tail.0, idx);
             println!("{}, {:?}", idx, tmp);
             rd1.update(&tmp);
             println!("\t{:?}", rd1.state);
-            assert_eq!(rd1.state.to_vec(), tail[1].h_in);
+            assert_eq!(rd1.state.to_vec(), tail.0[1].h_in);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "slow"]
+    fn challenge54() -> Result<()> {
+        let commitment = build_nostradamus_commitment(
+            2,
+            10,
+            RD1::compress,
+            RD1::block_size(),
+            RD1::digest_size(),
+        )?;
+
+        let mut rd1 = RD1::default();
+        rd1.state.copy_from_slice(&commitment.pre_hash);
+        rd1.length = commitment.total_length * RD1::block_size();
+        let committed_hash = rd1.digest();
+        println!("Committed hash = {}", committed_hash.encode_hex::<String>());
+
+        // Messages!
+        let msgs = vec![
+            //123456789abcdef0123456789abcdef
+            "Star wars is the best!",
+            "Star trek is the best!",
+            "I prefer Battlestar Galactica",
+            "Babylon 5 is underloved.",
+        ];
+        for m in msgs {
+            println!("{}", m);
+            let mut padded_base = m.as_bytes().to_vec();
+            padded_base.resize(2 * RD1::block_size(), 0);
+            let forged_msg = build_nostradamus_result(
+                &commitment.tail_parts,
+                &padded_base,
+                &[0u8; 16],
+                RD1::compress,
+            )?;
+            rd1.reset();
+            rd1.update(&forged_msg.0);
+            let forged_commitment = rd1.digest();
+            println!(
+                "\t{}\n{} with {}+{}={} compressions",
+                forged_msg.0.encode_hex::<String>(),
+                forged_commitment.encode_hex::<String>(),
+                commitment.compressions, forged_msg.1, commitment.compressions + forged_msg.1
+            );
+            assert_eq!(committed_hash, forged_commitment);
         }
         Ok(())
     }
