@@ -37,7 +37,7 @@ where
     let salt = rand_bigint(&params.n);
     let mut digest = H::default();
     digest.update(&salt.to_bytes_be());
-    digest.update(&password.as_bytes());
+    digest.update(password.as_bytes());
     let x_h = digest.digest();
     let x_h = BigUint::from_bytes_be(&x_h);
     let v = mod_exp(&params.g, &x_h, &params.n);
@@ -135,7 +135,7 @@ where
         let u = BigUint::from_bytes_be(&digest.digest());
 
         digest.update(&salt);
-        digest.update(&password.as_bytes());
+        digest.update(password.as_bytes());
         let x = BigUint::from_bytes_be(&digest.digest());
 
         let g_x = mod_exp(&self.params.g, &x, &self.params.n);
@@ -188,12 +188,12 @@ where
         let u = BigUint::from_bytes_be(&digest.digest());
 
         digest.update(&salt);
-        digest.update(&password.as_bytes());
+        digest.update(password.as_bytes());
         let x = BigUint::from_bytes_be(&digest.digest());
 
         // Start by adding n to ensure we stay above 0
         let exp = &self.a + (u * x);
-        let key = mod_exp(&b_pub, &exp, &self.params.n);
+        let key = mod_exp(b_pub, &exp, &self.params.n);
         digest.update(&key.to_bytes_be());
         let key = digest.digest();
 
@@ -374,7 +374,7 @@ mod tests {
         for word in crate::read_file("words.txt")? {
             let word = word?;
             digest.update(&salt);
-            digest.update(&word.as_bytes());
+            digest.update(word.as_bytes());
             let x = digest.digest();
             let x = BigUint::from_bytes_be(&x);
             let v = mod_exp(&SRP_STANDARD.g, &x, &SRP_STANDARD.n);

@@ -118,7 +118,7 @@ impl IsPrime for BigUint {
             }
             for _ in 0..s {
                 x = &x * &x;
-                x = x % self;
+                x %= self;
                 // println!("    Test = {}", x);
                 if x == neg_one {
                     continue 'WitnessLoop;
@@ -127,7 +127,7 @@ impl IsPrime for BigUint {
             return false;
         }
 
-        return true;
+        true
     }
 }
 
@@ -141,7 +141,7 @@ pub fn mod_exp(base: &BigUint, exp: &BigUint, modulo: &BigUint) -> BigUint {
     }
 
     let sqrt = exp >> 1;
-    let result = mod_exp(base, &sqrt, &modulo);
+    let result = mod_exp(base, &sqrt, modulo);
     let result = &result * &result;
     if exp.bit(0) {
         (result * base) % modulo

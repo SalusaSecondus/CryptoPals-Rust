@@ -63,7 +63,7 @@ fn pkcs1_encrypt_pad(data: &[u8], bit_length: u64) -> Result<Vec<u8>> {
     result.reserve_exact(em_len);
     result.push(0x00);
     result.push(0x02);
-    let mut rng = OsRng::default();
+    let mut rng = OsRng;
     let range = Uniform::new_inclusive(1u8, 255u8);
     for _ in 0..pad_len {
         result.push(rng.sample(range));

@@ -52,8 +52,8 @@ impl MT19937 {
         let val = MT19937::undo_18_shift(val);
         let val = MT19937::undo_15_shift(val);
         let val = MT19937::undo_7_shift(val);
-        let val = MT19937::undo_11_shift(val);
-        val
+        
+        MT19937::undo_11_shift(val)
     }
     fn undo_18_shift(y: u32) -> u32 {
         y ^ (y >> 18)

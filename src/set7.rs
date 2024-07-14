@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, hash::Hash, sync::mpsc::channel};
+use std::{collections::HashMap, fmt::Display, sync::mpsc::channel};
 
 use hex::ToHex;
 use num_traits::ToPrimitive;

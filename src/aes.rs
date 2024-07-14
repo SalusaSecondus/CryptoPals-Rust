@@ -92,17 +92,17 @@ impl AesKey {
                 let word = get_round_word(&round_keys, i - 1);
                 let word = rot_word(word)?;
                 let mut word = sub_word(&word)?;
-                word[0] ^= RC[(i / N) as usize];
+                word[0] ^= RC[i / N];
                 let word = xor(&word, get_round_word(&round_keys, i - N));
                 set_word(&mut round_keys, i, &word);
             } else if i >= N && N > 6 && i % N == 4 {
                 let word = get_round_word(&round_keys, i - 1);
-                let word = sub_word(&word)?;
+                let word = sub_word(word)?;
                 let word = xor(&word, get_round_word(&round_keys, i - N));
                 set_word(&mut round_keys, i, &word);
             } else {
                 let word = get_round_word(&round_keys, i - 1);
-                let word = xor(&word, get_round_word(&round_keys, i - N));
+                let word = xor(word, get_round_word(&round_keys, i - N));
                 set_word(&mut round_keys, i, &word);
             }
         }
@@ -142,7 +142,7 @@ impl AesKey {
             .chunks_exact(BLOCK_SIZE)
             .flat_map(|ct_block| {
                 let pt_block = xor(&self.decrypt_block(ct_block), &previous_block);
-                previous_block.copy_from_slice(&ct_block);
+                previous_block.copy_from_slice(ct_block);
                 pt_block
             })
             .collect())

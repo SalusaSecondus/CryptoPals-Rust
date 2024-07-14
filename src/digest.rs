@@ -47,7 +47,7 @@ impl Default for Sha1 {
             buffer: vec![],
         };
         result.reset();
-        return result;
+        result
     }
 }
 
@@ -72,7 +72,7 @@ impl Sha1 {
 
     fn compress(&mut self, chunk: &[u8]) {
         // println!("Compress: {}", hex::encode(chunk));
-        let mut w = to_w32_be(&chunk);
+        let mut w = to_w32_be(chunk);
         w.resize(80, 0);
         for i in 16..80 {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
@@ -174,7 +174,7 @@ impl Digest for Sha1 {
     }
 
     fn digest_size() -> usize {
-        return 20;
+        20
     }
 
     fn block_size() -> usize {
@@ -205,7 +205,7 @@ impl Default for Sha256 {
             buffer: vec![],
         };
         result.reset();
-        return result;
+        result
     }
 }
 
@@ -335,7 +335,7 @@ impl Digest for Sha256 {
     }
 
     fn digest_size() -> usize {
-        return 32;
+        32
     }
 
     fn block_size() -> usize {
@@ -610,7 +610,7 @@ impl Digest for MD4 {
     }
 
     fn digest_size() -> usize {
-        return 16;
+        16
     }
 
     fn block_size() -> usize {
@@ -797,19 +797,19 @@ mod tests {
             guess.push(0x80);
             let mut padding_needed = 56i32 - ((ml + 1) % 64) as i32;
             if padding_needed < 0 {
-                padding_needed += 64 as i32;
+                padding_needed += 64_i32;
             }
             guess.extend(std::iter::repeat(0).take(padding_needed as usize));
             let ml = ml * 8;
             let mut length = [0u8; 8];
-            length[0] = (ml >> 56) as u8 & 0xff;
-            length[1] = (ml >> 48) as u8 & 0xff;
-            length[2] = (ml >> 40) as u8 & 0xff;
-            length[3] = (ml >> 32) as u8 & 0xff;
-            length[4] = (ml >> 24) as u8 & 0xff;
-            length[5] = (ml >> 16) as u8 & 0xff;
-            length[6] = (ml >> 8) as u8 & 0xff;
-            length[7] = ml as u8 & 0xff;
+            length[0] = (ml >> 56) as u8;
+            length[1] = (ml >> 48) as u8;
+            length[2] = (ml >> 40) as u8;
+            length[3] = (ml >> 32) as u8;
+            length[4] = (ml >> 24) as u8;
+            length[5] = (ml >> 16) as u8;
+            length[6] = (ml >> 8) as u8;
+            length[7] = ml as u8;
             guess.extend_from_slice(&length);
             guess.extend_from_slice(b";admin=true");
             hash.update(b";admin=true");
@@ -839,19 +839,19 @@ mod tests {
             guess.push(0x80);
             let mut padding_needed = 56i32 - ((ml + 1) % 64) as i32;
             if padding_needed < 0 {
-                padding_needed += 64 as i32;
+                padding_needed += 64_i32;
             }
             guess.extend(std::iter::repeat(0).take(padding_needed as usize));
             let ml = ml * 8;
             let mut length = [0u8; 8];
-            length[7] = (ml >> 56) as u8 & 0xff;
-            length[6] = (ml >> 48) as u8 & 0xff;
-            length[5] = (ml >> 40) as u8 & 0xff;
-            length[4] = (ml >> 32) as u8 & 0xff;
-            length[3] = (ml >> 24) as u8 & 0xff;
-            length[2] = (ml >> 16) as u8 & 0xff;
-            length[1] = (ml >> 8) as u8 & 0xff;
-            length[0] = ml as u8 & 0xff;
+            length[7] = (ml >> 56) as u8;
+            length[6] = (ml >> 48) as u8;
+            length[5] = (ml >> 40) as u8;
+            length[4] = (ml >> 32) as u8;
+            length[3] = (ml >> 24) as u8;
+            length[2] = (ml >> 16) as u8;
+            length[1] = (ml >> 8) as u8;
+            length[0] = ml as u8;
             guess.extend_from_slice(&length);
             guess.extend_from_slice(b";admin=true");
             hash.update(b";admin=true");

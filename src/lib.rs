@@ -85,7 +85,7 @@ fn find_best_single_xor(bin: &[u8]) -> Result<(Vec<u8>, u8, f64)> {
     let mut best_guess = Option::None;
 
     for twiddle in 0..=255u8 {
-        let guess = crate::xor(&bin, &[twiddle]);
+        let guess = crate::xor(bin, &[twiddle]);
         let score = crate::monogram_score(&guess);
         if score < best_score {
             best_score = score;
@@ -103,7 +103,7 @@ fn find_best_multi_xor(bin: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
 
     for possible_length in 1..=40 {
         let offset = &bin[possible_length..];
-        let (_, weight) = hamming_weight(bin, &offset);
+        let (_, weight) = hamming_weight(bin, offset);
         if weight < best_weight {
             best_weight = weight;
             key_length = possible_length;
@@ -118,7 +118,7 @@ fn find_best_multi_xor(bin: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
 fn find_best_multi_xor_with_chunks(chunks: &[Vec<u8>]) -> Result<Vec<u8>> {
     let mut key = vec![];
     for c in chunks {
-        key.push(find_best_single_xor(&c)?.1);
+        key.push(find_best_single_xor(c)?.1);
     }
     Ok(key)
 }
@@ -236,7 +236,7 @@ pub fn monogram_score(bin: &[u8]) -> f64 {
         if b > &127 {
             result += 100.0;
         }
-        if b <= &8 || (b >= &11 && b <= &31) {
+        if b <= &8 || (&11..=&31).contains(&b) {
             result += 100.0;
         }
         if !b.is_ascii() {
@@ -250,8 +250,8 @@ pub fn monogram_score(bin: &[u8]) -> f64 {
     }
 
     for k in FREQ.keys() {
-        let found = counts.get(&k).unwrap_or(&0.0) / total;
-        let expected = FREQ.get(&k).unwrap();
+        let found = counts.get(k).unwrap_or(&0.0) / total;
+        let expected = FREQ.get(k).unwrap();
         let diff = found - expected;
         let sq_diff = diff * diff;
         result += sq_diff;
@@ -346,7 +346,7 @@ mod tests {
             let hex = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
             assert_eq!(
                 "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t",
-                base64::encode(&hex::decode(hex)?)
+                base64::encode(hex::decode(hex)?)
             );
 
             Ok(())
@@ -422,7 +422,7 @@ mod tests {
         #[ignore = "large_output"]
         fn challenge_6() -> Result<()> {
             let input = file_to_string("6.txt")?;
-            let input = base64::decode(&input)?;
+            let input = base64::decode(input)?;
             let pieces = find_best_multi_xor(&input)?;
             println!(
                 "Challenge 6: {}\n\n{}",
@@ -436,7 +436,7 @@ mod tests {
         fn challenge_7() -> Result<()> {
             let key: AesKey = AesKey::new(b"YELLOW SUBMARINE")?;
             let input = file_to_string("7.txt")?;
-            let input = base64::decode(&input)?;
+            let input = base64::decode(input)?;
 
             let plaintext: Vec<u8> = input
                 .chunks_exact(16)
@@ -484,7 +484,7 @@ mod tests {
             let key = AesKey::new(b"YELLOW SUBMARINE")?;
             let iv = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-            let ciphertext = base64::decode(&crate::file_to_string("10.txt")?)?;
+            let ciphertext = base64::decode(crate::file_to_string("10.txt")?)?;
 
             let plaintext = Padding::Pkcs7Padding(16).unpad(&key.decrypt_cbc(&iv, &ciphertext)?)?;
 
@@ -583,14 +583,14 @@ mod tests {
         #[test]
         fn challenge_13() -> Result<()> {
             let oracle = Set2Oracle::new();
-            let role_block = oracle.profile_for_13(&"__________admin")?;
+            let role_block = oracle.profile_for_13("__________admin")?;
 
             let role_block = role_block.chunks_exact(16).nth(1).unwrap();
 
-            let padding_block = oracle.profile_for_13(&"f")?;
+            let padding_block = oracle.profile_for_13("f")?;
             let padding_block = padding_block.chunks_exact(16).last().unwrap();
 
-            let victim = oracle.profile_for_13(&"gr@sample.com")?;
+            let victim = oracle.profile_for_13("gr@sample.com")?;
 
             let mut attack = vec![];
             attack.extend_from_slice(&victim[0..32]);
@@ -853,7 +853,7 @@ mod tests {
         fn challenge_25() -> Result<()> {
             // It turns out that I'm not doing this with the exact requested input, but the technique still works, and I'm tired so it doesn't matter.
             let plaintext = file_to_string("25.txt")?;
-            let plaintext = base64::decode(&plaintext)?;
+            let plaintext = base64::decode(plaintext)?;
             let mut oracle = Challenge25Oracle::new(plaintext);
 
             // Let's do this the boring way
@@ -920,7 +920,7 @@ mod tests {
                 for guess in 0..=255 {
                     let mut running_time = Duration::from_millis(0);
                     guessed_sig[idx] = guess;
-                    let sig_hex = hex::encode(&guessed_sig);
+                    let sig_hex = hex::encode(guessed_sig);
                     println!("Guessing: {}", sig_hex);
                     for _ in 0..TRIALS {
                         let request = client
@@ -967,7 +967,7 @@ mod tests {
                 for guess in 0..=255 {
                     let mut running_time = Duration::from_millis(0);
                     guessed_sig[idx] = guess;
-                    let sig_hex = hex::encode(&guessed_sig);
+                    let sig_hex = hex::encode(guessed_sig);
                     print!("Guessing: {}", sig_hex);
                     for _ in 0..TRIALS {
                         let request = client

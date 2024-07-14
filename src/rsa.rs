@@ -42,7 +42,7 @@ impl RsaKey for RsaKeyImpl {
 
 impl RsaPrivateKey for RsaKeyImpl {
     fn priv_exp(&self) -> &BigUint {
-        &(self.priv_exp)
+        (self.priv_exp)
             .as_ref()
             .context("Not a private key")
             .unwrap()
@@ -76,7 +76,7 @@ pub fn gen_rsa(bit_size: u64, pub_exp: &BigUint) -> (impl RsaKey, impl RsaPrivat
             priv_exp: None,
         };
         let priv_key = RsaKeyImpl {
-            modulus: modulus,
+            modulus,
             pub_exp: pub_exp.to_owned(),
             priv_exp: Some(inverse),
         };
@@ -110,7 +110,7 @@ where
     H: Digest + DigestOneShot,
 {
     let oid = H::oid().context("No OID registered")?;
-    let digest = H::oneshot_digest(&data);
+    let digest = H::oneshot_digest(data);
 
     Ok(asn1::write(|w| {
         //    DigestInfo ::= SEQUENCE {
@@ -163,7 +163,7 @@ where
         );
         let prefix = &actual_struct[..expected_struct.len()];
         println!("Expected: {}", hex::encode(&expected_struct));
-        println!("Actual:   {}", hex::encode(&actual_struct));
+        println!("Actual:   {}", hex::encode(actual_struct));
         ensure!(expected_struct == prefix, "Invalid signature");
     }
     Ok(())
@@ -387,9 +387,9 @@ mod tests {
         let m_s_1 = &n_012 / n_1;
         let m_s_2 = &n_012 / n_2;
 
-        let result = ((&c_0 * &m_s_0 * inv_mod(&m_s_0, &n_0)?)
-            + (&c_1 * &m_s_1 * inv_mod(&m_s_1, &n_1)?)
-            + (&c_2 * &m_s_2 * inv_mod(&m_s_2, &n_2)?))
+        let result = ((&c_0 * &m_s_0 * inv_mod(&m_s_0, n_0)?)
+            + (&c_1 * &m_s_1 * inv_mod(&m_s_1, n_1)?)
+            + (&c_2 * &m_s_2 * inv_mod(&m_s_2, n_2)?))
             % n_012;
 
         let result = result.nth_root(3);
@@ -434,7 +434,7 @@ mod tests {
         assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, true).is_ok());
         assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &msg, &signature, false).is_ok());
 
-        let mut bad_msg = msg.clone();
+        let mut bad_msg = msg;
         bad_msg[0] ^= 0x14;
         assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &bad_msg, &signature, true).is_err());
         assert!(rsa_pkcs1_15_verify::<Sha1, _>(&pub_key, &bad_msg, &signature, false).is_err());

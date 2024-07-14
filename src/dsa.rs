@@ -54,9 +54,9 @@ where
     //     bail!("Bad k");
     // }
 
-    let h = H::oneshot_digest_num(&data);
+    let h = H::oneshot_digest_num(data);
     let h_xr = &h + (priv_key * &r);
-    let k_inv = inv_mod(&k, &params.q).unwrap();
+    let k_inv = inv_mod(k, &params.q).unwrap();
     let s = (&k_inv * &h_xr) % &params.q;
 
     ensure!(!s.is_zero(), "Bad s");
@@ -135,7 +135,7 @@ mod tests {
         let signature = dsa_sign::<Sha1>(&DSA_PARAMS, &private_key, &msg);
         dsa_verify::<Sha1>(&DSA_PARAMS, &public_key, &msg, &signature)?;
 
-        let mut bad_msg = msg.clone();
+        let mut bad_msg = msg;
         bad_msg[0] ^= 0x14;
         assert!(dsa_verify::<Sha1>(&DSA_PARAMS, &public_key, &bad_msg, &signature).is_err());
         Ok(())
@@ -231,8 +231,8 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
                 }
                 if &y == &public_key.0 {
                     println!("Found k = {} and x = {}", k, x.to_str_radix(10));
-                    let key_digest = Sha1::oneshot_digest(&x.to_str_radix(16).as_bytes());
-                    let hex_digest = hex::encode(&key_digest);
+                    let key_digest = Sha1::oneshot_digest(x.to_str_radix(16).as_bytes());
+                    let hex_digest = hex::encode(key_digest);
                     assert_eq!("0954edd5e0afe5542a4adf012611a91912a3ec16", hex_digest);
                     return Ok(());
                 }
@@ -267,7 +267,7 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
                 .last()
                 .context("Missing entry")?
                 .to_owned();
-            let s = BigUint::parse_bytes(&s.as_bytes(), 10).context("Bad number")?;
+            let s = BigUint::parse_bytes(s.as_bytes(), 10).context("Bad number")?;
             // r
             let line = lines.next().context("Missing line")??;
             let r = line
@@ -275,7 +275,7 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
                 .last()
                 .context("Missing entry")?
                 .to_owned();
-            let r = BigUint::parse_bytes(&r.as_bytes(), 10).context("Bad number")?;
+            let r = BigUint::parse_bytes(r.as_bytes(), 10).context("Bad number")?;
             // m
             let line = lines.next().context("Missing line")??;
             let m = line
@@ -283,7 +283,7 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
                 .last()
                 .context("Missing entry")?
                 .to_owned();
-            let m = BigUint::parse_bytes(&m.as_bytes(), 16).context("Bad number")?;
+            let m = BigUint::parse_bytes(m.as_bytes(), 16).context("Bad number")?;
             result.push(Entry44 { msg, s, r, m });
         }
 
@@ -300,15 +300,15 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
                 let bottom = (&DSA_PARAMS.q + &e1.s - &e2.s) % &DSA_PARAMS.q;
                 let bottom = inv_mod(&bottom, &DSA_PARAMS.q)?;
                 let k = (top * bottom) % &DSA_PARAMS.q;
-                let digest = Sha1::oneshot_digest(&e1.msg.as_bytes());
+                let digest = Sha1::oneshot_digest(e1.msg.as_bytes());
                 if let Ok(x) =
                     recover_private(&DSA_PARAMS, &[e1.r.clone(), e1.s.clone()], &digest, &k)
                 {
                     let y = mod_exp(&DSA_PARAMS.g, &x, &DSA_PARAMS.p);
                     if &y == &public_key.0 {
                         println!("msg1: = {}\nmsg2: = {}", e1.msg, e2.msg);
-                        let key_digest = Sha1::oneshot_digest(&x.to_str_radix(16).as_bytes());
-                        let hex_digest = hex::encode(&key_digest);
+                        let key_digest = Sha1::oneshot_digest(x.to_str_radix(16).as_bytes());
+                        let hex_digest = hex::encode(key_digest);
                         assert_eq!("ca8f6f7c66fa362d40760d135b763eb8527d3d52", hex_digest);
                         return Ok(());
                     }

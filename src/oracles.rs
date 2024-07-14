@@ -44,7 +44,7 @@ impl Challenge11Oracle {
             };
             static ref IV: [u8; 16] = [0; 16];
         }
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
 
         let mut extra = vec![];
         extra.resize(EXTRA_RANGE.sample(&mut rng), 0u8);
@@ -104,7 +104,7 @@ impl Set2Oracle {
         plaintext.extend(HIDDEN_PT.iter());
 
         let padded = Padding::Pkcs7Padding(16).pad(&plaintext)?;
-        Ok(self.key.encrypt_ecb(&padded)?)
+        self.key.encrypt_ecb(&padded)
     }
 
     pub fn encrypt14(&self, attacker_controlled: &[u8]) -> Result<Vec<u8>> {
@@ -117,7 +117,7 @@ impl Set2Oracle {
         plaintext.extend(HIDDEN_PT.iter());
 
         let padded = Padding::Pkcs7Padding(16).pad(&plaintext)?;
-        Ok(self.key.encrypt_ecb(&padded)?)
+        self.key.encrypt_ecb(&padded)
     }
 
     pub fn is_admin_13(&self, ciphertext: &[u8]) -> bool {
@@ -174,7 +174,7 @@ impl Set2Oracle {
             "user_data contains invalid character"
         );
         let mut plaintext = Vec::from(&b"comment1=cooking%20MCs;userdata="[..]);
-        plaintext.extend_from_slice(&user_data.as_bytes());
+        plaintext.extend_from_slice(user_data.as_bytes());
         plaintext.extend_from_slice(b";comment2=%20like%20a%20pound%20of%20bacon");
 
         plaintext = Padding::Pkcs7Padding(16).pad(&plaintext)?;
@@ -205,7 +205,7 @@ impl Set2Oracle {
             "user_data contains invalid character"
         );
         let mut plaintext = Vec::from(&b"comment1=cooking%20MCs;userdata="[..]);
-        plaintext.extend_from_slice(&user_data.as_bytes());
+        plaintext.extend_from_slice(user_data.as_bytes());
         plaintext.extend_from_slice(b";comment2=%20like%20a%20pound%20of%20bacon");
 
         plaintext = Padding::Pkcs7Padding(16).pad(&plaintext)?;
@@ -258,7 +258,7 @@ impl Challenge17Oracle {
         ];
         let mut rng = OsRng;
         let idx = rng.gen_range(0..plaintexts.len());
-        let plaintext = base64::decode(plaintexts[idx].to_owned()).unwrap();
+        let plaintext = base64::decode(plaintexts[idx]).unwrap();
         let padded_plaintext = Padding::Pkcs7Padding(16).pad(&plaintext).unwrap();
         let plaintext = String::from_utf8(plaintext).unwrap();
 
@@ -463,7 +463,7 @@ impl Challenge26Oracle {
             "user_data contains invalid character"
         );
         let mut plaintext = Vec::from(&b"comment1=cooking%20MCs;userdata="[..]);
-        plaintext.extend_from_slice(&user_data.as_bytes());
+        plaintext.extend_from_slice(user_data.as_bytes());
         plaintext.extend_from_slice(b";comment2=%20like%20a%20pound%20of%20bacon");
 
         let mut iv = vec![];
@@ -593,7 +593,7 @@ impl<F: OracleServerHandler> OracleServer<F> {
 }
 
 fn parse_query_params(url: &str) -> Result<HashMap<String, String>> {
-    let parts: Vec<&str> = url.splitn(2, "?").collect();
+    let parts: Vec<&str> = url.splitn(2, '?').collect();
     let query_part = *parts.get(1).unwrap_or(&"");
 
     Set2Oracle::parse_kv(query_part, '&')
@@ -611,7 +611,7 @@ pub fn challenge3x(millis: u64) -> OracleServer<impl OracleServerHandler> {
         let sig = params.get("signature").context("Missing signature")?;
         let sig = hex::decode(sig)?;
         let mut hmac = Hmac::<Sha1>::init_new(&key);
-        hmac.update(&file.as_bytes());
+        hmac.update(file.as_bytes());
         let expected_sig = hmac.digest();
         if expected_sig.len() != sig.len() {
             bail!("Bad signature");
@@ -887,7 +887,7 @@ mod tests {
     fn chall13_smoke() -> Result<()> {
         let oracle = Set2Oracle::new();
         let ct = oracle.profile_for_13("salusa@salusa.dev")?;
-        assert_eq!(false, oracle.is_admin_13(&ct));
+        assert!(!oracle.is_admin_13(&ct));
         assert_eq!("user", oracle.get_role_13(&ct)?);
 
         Ok(())
