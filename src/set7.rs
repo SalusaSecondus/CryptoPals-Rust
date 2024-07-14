@@ -590,19 +590,19 @@ where
     // Step 1: Find bridge
     let mut bridge = vec![0u8; block_size];
     let mut rng = OsRng;
-    let mut target_idx = None;
+    let target_idx;
     loop {
         rng.fill_bytes(&mut bridge);
         let h_out = compress(&h_in, &bridge);
         compressions += 1;
 
         if let Some(tmp) = targets.get(&h_out) {
-            target_idx = Some(*tmp);
+            target_idx = *tmp;
             break;
         }
     }
     result.extend(bridge);
-    result.extend(build_nostradamus_tail(parts, target_idx.unwrap()));
+    result.extend(build_nostradamus_tail(parts, target_idx));
 
     Ok((result, compressions))
 }
