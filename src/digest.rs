@@ -51,7 +51,7 @@ impl Default for Sha1 {
     }
 }
 
-fn to_w32_be(chunk: &[u8]) -> Vec<u32> {
+pub fn to_w32_be(chunk: &[u8]) -> Vec<u32> {
     chunk
         .chunks_exact(4)
         .map(|word| u32::from_be_bytes(word.try_into().unwrap()))
@@ -399,7 +399,7 @@ impl<T: Digest> Digest for PrefixMac<T> {
 
 #[derive(Clone)]
 pub struct MD4 {
-    h: [u32; 4],
+    pub h: [u32; 4],
     ml: u64,
     buffer: Vec<u8>,
 }
@@ -418,11 +418,18 @@ impl Default for MD4 {
 
 #[allow(non_snake_case)]
 impl MD4 {
-    const I0: u32 = 0x67452301; /* Initial values for MD buffer */
-    const I1: u32 = 0xefcdab89;
-    const I2: u32 = 0x98badcfe;
-    const I3: u32 = 0x10325476;
-
+    pub const I0: u32 = 0x67452301; /* Initial values for MD buffer */
+    pub const I1: u32 = 0xefcdab89;
+    pub const I2: u32 = 0x98badcfe;
+    pub const I3: u32 = 0x10325476;
+    pub const SHIFTS: [u32; 12] = [
+        3, 7, 11, 19, 
+        3, 5, 9, 13,
+        3, 9, 11, 15];
+    pub const WORD_ORDER: [usize; 48] = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10,
+        14, 3, 7, 11, 15, 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15,
+    ];
     pub fn from_hash(hash: &[u8], length: usize) -> Self {
         let word: Vec<u32> = to_w32_be(hash).iter().map(|w| u32::from_be(*w)).collect();
         let mut h = [0u32; 4];
@@ -434,103 +441,76 @@ impl MD4 {
         }
     }
 
-    fn compress(&mut self, chunk: &[u8]) {
+    pub fn compress(&mut self, chunk: &[u8]) {
         // println!("MD4 State- {:?}", self.h);
-
-        let fs1 = 3; /* round 1 shift amounts */
-        let fs2 = 7;
-        let fs3 = 11;
-        let fs4 = 19;
-        let gs1 = 3; /* round 2 shift amounts */
-        let gs2 = 5;
-        let gs3 = 9;
-        let gs4 = 13;
-        let hs1 = 3; /* round 3 shift amounts */
-        let hs2 = 9;
-        let hs3 = 11;
-        let hs4 = 15;
 
         let X: Vec<u32> = to_w32_be(chunk);
         let X: Vec<u32> = X.iter().map(|w| u32::from_be(*w)).collect();
-        let mut A = self.h[0];
-        let mut B = self.h[1];
-        let mut C = self.h[2];
-        let mut D = self.h[3];
+        let mut state = self.h;
+        // let mut A = self.h[0];
+        // let mut B = self.h[1];
+        // let mut C = self.h[2];
+        // let mut D = self.h[3];
 
         /* Update the message digest buffer */
-        Self::ff(&mut A, B, C, D, 0, fs1, &X); /* Round 1 */
-        Self::ff(&mut D, A, B, C, 1, fs2, &X);
-        Self::ff(&mut C, D, A, B, 2, fs3, &X);
-        Self::ff(&mut B, C, D, A, 3, fs4, &X);
-        Self::ff(&mut A, B, C, D, 4, fs1, &X);
-        Self::ff(&mut D, A, B, C, 5, fs2, &X);
-        Self::ff(&mut C, D, A, B, 6, fs3, &X);
-        Self::ff(&mut B, C, D, A, 7, fs4, &X);
-        Self::ff(&mut A, B, C, D, 8, fs1, &X);
-        Self::ff(&mut D, A, B, C, 9, fs2, &X);
-        Self::ff(&mut C, D, A, B, 10, fs3, &X);
-        Self::ff(&mut B, C, D, A, 11, fs4, &X);
-        Self::ff(&mut A, B, C, D, 12, fs1, &X);
-        Self::ff(&mut D, A, B, C, 13, fs2, &X);
-        Self::ff(&mut C, D, A, B, 14, fs3, &X);
-        Self::ff(&mut B, C, D, A, 15, fs4, &X);
-        Self::gg(&mut A, B, C, D, 0, gs1, &X); /* Round 2 */
-        Self::gg(&mut D, A, B, C, 4, gs2, &X);
-        Self::gg(&mut C, D, A, B, 8, gs3, &X);
-        Self::gg(&mut B, C, D, A, 12, gs4, &X);
-        Self::gg(&mut A, B, C, D, 1, gs1, &X);
-        Self::gg(&mut D, A, B, C, 5, gs2, &X);
-        Self::gg(&mut C, D, A, B, 9, gs3, &X);
-        Self::gg(&mut B, C, D, A, 13, gs4, &X);
-        Self::gg(&mut A, B, C, D, 2, gs1, &X);
-        Self::gg(&mut D, A, B, C, 6, gs2, &X);
-        Self::gg(&mut C, D, A, B, 10, gs3, &X);
-        Self::gg(&mut B, C, D, A, 14, gs4, &X);
-        Self::gg(&mut A, B, C, D, 3, gs1, &X);
-        Self::gg(&mut D, A, B, C, 7, gs2, &X);
-        Self::gg(&mut C, D, A, B, 11, gs3, &X);
-        Self::gg(&mut B, C, D, A, 15, gs4, &X);
-        Self::hh(&mut A, B, C, D, 0, hs1, &X); /* Round 3 */
-        Self::hh(&mut D, A, B, C, 8, hs2, &X);
-        Self::hh(&mut C, D, A, B, 4, hs3, &X);
-        Self::hh(&mut B, C, D, A, 12, hs4, &X);
-        Self::hh(&mut A, B, C, D, 2, hs1, &X);
-        Self::hh(&mut D, A, B, C, 10, hs2, &X);
-        Self::hh(&mut C, D, A, B, 6, hs3, &X);
-        Self::hh(&mut B, C, D, A, 14, hs4, &X);
-        Self::hh(&mut A, B, C, D, 1, hs1, &X);
-        Self::hh(&mut D, A, B, C, 9, hs2, &X);
-        Self::hh(&mut C, D, A, B, 5, hs3, &X);
-        Self::hh(&mut B, C, D, A, 13, hs4, &X);
-        Self::hh(&mut A, B, C, D, 3, hs1, &X);
-        Self::hh(&mut D, A, B, C, 11, hs2, &X);
-        Self::hh(&mut C, D, A, B, 7, hs3, &X);
-        Self::hh(&mut B, C, D, A, 15, hs4, &X);
-        self.h[0] = A.overflowing_add(self.h[0]).0;
-        self.h[1] = B.overflowing_add(self.h[1]).0;
-        self.h[2] = C.overflowing_add(self.h[2]).0;
-        self.h[3] = D.overflowing_add(self.h[3]).0;
+        let ops = [Self::ff1, Self::gg1, Self::hh1];
+        for (step, word_idx) in Self::WORD_ORDER.iter().enumerate() {
+            let round = step / 16;
+            let op = ops[round];
+            op(
+                &mut state,
+                step,
+                X[*word_idx],
+            );
+        // println!("STEP {}\t: {:#04x}{:#04x}{:#04x}{:#04x}", step, state[0].to_le(), state[1].to_le(), state[2].to_le(), state[3].to_le());
+        }
+        self.h[0] = state[0].overflowing_add(self.h[0]).0;
+        self.h[1] = state[1].overflowing_add(self.h[1]).0;
+        self.h[2] = state[2].overflowing_add(self.h[2]).0;
+        self.h[3] = state[3].overflowing_add(self.h[3]).0;
 
         // println!("MD4 State: {:?}", self.h);
     }
 
-    fn f(x: u32, y: u32, z: u32) -> u32 {
+    pub fn f(x: u32, y: u32, z: u32) -> u32 {
         (x & y) | (!x & z)
     }
 
-    fn g(x: u32, y: u32, z: u32) -> u32 {
+    pub fn g(x: u32, y: u32, z: u32) -> u32 {
         (x & y) | (x & z) | (y & z)
     }
 
-    fn h(x: u32, y: u32, z: u32) -> u32 {
+    pub fn h(x: u32, y: u32, z: u32) -> u32 {
         x ^ y ^ z
     }
 
-    fn rot(A: u32, s: u32) -> u32 {
+    pub fn rot(A: u32, s: u32) -> u32 {
         A.rotate_left(s)
     }
 
-    fn ff(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
+    pub fn ff1(state: &mut [u32], step: usize, x: u32) {
+        let round = step / 16;
+        let mut offset = step % 4;
+        if offset > 0 {
+            offset = 4 - offset;
+        }
+        let a: usize = offset;
+        let b = (offset + 1) % 4;
+        let c = (b + 1) % 4;
+        let d = (c + 1) % 4;
+
+        // println!("{}, {}, {}, {}", a, b, c, d);
+        state[a] = Self::rot(
+            state[a]
+                .overflowing_add(Self::f(state[b], state[c], state[d]))
+                .0
+                .overflowing_add(x)
+                .0,
+            Self::SHIFTS[4 * round + (step % 4)],
+        );
+    }
+
+    pub fn ff(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
         *A = Self::rot(
             A.overflowing_add(Self::f(B, C, D))
                 .0
@@ -539,7 +519,40 @@ impl MD4 {
             s,
         );
     }
-    fn gg(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
+
+    pub fn ff2word(a1: u32, a0: u32, b: u32, c: u32, d: u32, s: u32) -> u32 {
+        a1.rotate_right(s)
+            .overflowing_sub(Self::f(b, c, d))
+            .0
+            .overflowing_sub(a0)
+            .0
+    }
+    pub fn gg1(state: &mut [u32], step: usize, x: u32) {
+        let round = step / 16;
+
+        let mut offset = step % 4;
+        if offset > 0 {
+            offset = 4 - offset;
+        }
+        let a: usize = offset;
+        let b = (offset + 1) % 4;
+        let c = (b + 1) % 4;
+        let d = (c + 1) % 4;
+
+        // println!("{}, {}, {}, {}", a, b, c, d);
+
+        state[a] = Self::rot(
+            state[a]
+                .overflowing_add(Self::g(state[b], state[c], state[d]))
+                .0
+                .overflowing_add(x)
+                .0
+                .overflowing_add(0o13240474631)
+                .0,
+            Self::SHIFTS[4 * round + (step % 4)],
+        );
+    }
+    pub fn gg(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
         *A = Self::rot(
             A.overflowing_add(Self::g(B, C, D))
                 .0
@@ -550,7 +563,44 @@ impl MD4 {
             s,
         );
     }
-    fn hh(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
+
+    pub fn gg2word(a1: u32, a0: u32, b: u32, c: u32, d: u32, s: u32) -> u32 {
+        a1.rotate_right(s)
+            .overflowing_sub(Self::g(b, c, d))
+            .0
+            .overflowing_sub(a0)
+            .0
+            .overflowing_sub(0o13240474631)
+            .0
+    }
+
+    pub fn hh1(state: &mut [u32], step: usize, x: u32) {
+        let round = step / 16;
+
+        let mut offset = step % 4;
+        if offset > 0 {
+            offset = 4 - offset;
+        }
+        let a: usize = offset;
+        let b = (offset + 1) % 4;
+        let c = (b + 1) % 4;
+        let d = (c + 1) % 4;
+
+        // println!("{}, {}, {}, {}", a, b, c, d);
+
+        state[a] = Self::rot(
+            state[a]
+                .overflowing_add(Self::h(state[b], state[c], state[d]))
+                .0
+                .overflowing_add(x)
+                .0
+                .overflowing_add(0o15666365641)
+                .0,
+            Self::SHIFTS[4 * round + (step % 4)],
+        );
+    }
+
+    pub fn hh(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
         *A = Self::rot(
             A.overflowing_add(Self::h(B, C, D))
                 .0

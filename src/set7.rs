@@ -1,12 +1,18 @@
-use std::{collections::HashMap, fmt::Display, sync::mpsc::channel};
+use std::{collections::HashMap, fmt::Display, os::macos::raw::stat, sync::mpsc::channel, vec};
 
 use hex::ToHex;
+use lazy_static::lazy_static;
 use num_traits::ToPrimitive;
 
-use crate::{aes::AesKey, digest::Digest, padding::Padding};
-use anyhow::{ensure, Result};
+use crate::{
+    aes::AesKey,
+    digest::{to_w32_be, Digest, DigestOneShot, MD4},
+    padding::Padding,
+    BitArray,
+};
+use anyhow::{bail, ensure, Result};
 use itertools::Itertools;
-use rand::RngCore;
+use rand::{seq::index, Rng, RngCore};
 use rand_core::OsRng;
 use workerpool::{
     thunk::{Thunk, ThunkWorker},
@@ -651,6 +657,365 @@ fn build_nostradamus_tail(parts: &[NostradamusElement], start: usize) -> Vec<u8>
     result
 }
 
+fn massage_md4_block(block: &mut [u8]) {
+    assert_eq!(block.len(), MD4::block_size());
+
+    let mut md4 = MD4::default();
+    let a0 = md4.h[0];
+    let b0 = md4.h[1];
+    let c0 = md4.h[2];
+    let d0 = md4.h[3];
+    let mut X: Vec<u32> = to_w32_be(block).iter().map(|w| u32::from_be(*w)).collect();
+    // First condition
+    {
+        let mut a1 = a0;
+        MD4::ff(&mut a1, b0, c0, d0, 0, 3, &X);
+        // Fix the bad bit
+        a1 ^= (a1.bit(6) ^ b0.bit(6)) << 6;
+        X[0] = a1
+            .rotate_right(3)
+            .wrapping_sub(a0)
+            .wrapping_sub(MD4::f(b0, c0, d0));
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum MD4Constraint {
+    Equal(usize),
+    One(usize),
+    Zero(usize),
+    Neg(usize),
+    EqOffset(usize, usize),
+}
+
+impl MD4Constraint {
+    fn apply(&self, new_word: u32, state: [u32; 4], word_idxs: [usize; 4]) -> u32 {
+        let old_word_idx = match self {
+            MD4Constraint::Equal(_) => word_idxs[1],
+            MD4Constraint::EqOffset(_, old_idx) => word_idxs[*old_idx],
+            _ => 0,
+        };
+        let old_word = state[old_word_idx];
+        match self {
+            MD4Constraint::Equal(idx) | MD4Constraint::EqOffset(idx, _) => {
+                new_word.set_bit(*idx, old_word.bit(*idx))
+            }
+            MD4Constraint::Neg(idx) => new_word.set_bit(*idx, 1 - old_word.bit(*idx)),
+            MD4Constraint::One(idx) => new_word.set_bit(*idx, 1),
+            MD4Constraint::Zero(idx) => new_word.set_bit(*idx, 0),
+            // MD4Constraint::EqOffset(index, ) => new_word.set_bit(*idx, val)
+        }
+    }
+
+    fn require(&self, new_word: u32, state: [u32; 4], word_idxs: [usize; 4]) -> Result<()> {
+        ensure!(new_word == self.apply(new_word, state, word_idxs));
+        Ok(())
+    }
+}
+
+impl Display for MD4Constraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+lazy_static! {
+    static ref MD4CollisionConstraints: Vec<Vec<MD4Constraint>> =
+        vec![
+            // a1
+            vec![MD4Constraint::Equal(6)],
+            // d1
+            vec![MD4Constraint::Zero(6), MD4Constraint::Equal(7), MD4Constraint::Equal(10)],
+            // c1
+            vec![MD4Constraint::One(6), MD4Constraint::One(7), MD4Constraint::Zero(10), MD4Constraint::Equal(25)],
+            // b1
+            vec![MD4Constraint::One(6), MD4Constraint::Zero(7), MD4Constraint::Zero(10), MD4Constraint::Zero(25)],
+            // a2
+            vec![MD4Constraint::One(7), MD4Constraint::One(10), MD4Constraint::Zero(25), MD4Constraint::Equal(13)],
+            // d2
+            vec![MD4Constraint::Zero(13), MD4Constraint::Equal(18), MD4Constraint::Equal(19), MD4Constraint::Equal(20), MD4Constraint::Equal(21), MD4Constraint::One(25)],
+            // c2
+            vec![MD4Constraint::Equal(12), MD4Constraint::Zero(13), MD4Constraint::Equal(14), MD4Constraint::Zero(18), MD4Constraint::Zero(19), MD4Constraint::One(20), MD4Constraint::Zero(21)],
+            // b2
+            vec![MD4Constraint::One(12), MD4Constraint::One(13), MD4Constraint::Zero(14), MD4Constraint::Equal(16), MD4Constraint::Zero(18), MD4Constraint::Zero(19), MD4Constraint::Zero(20), MD4Constraint::Zero(21)],
+            // a3
+            vec![MD4Constraint::One(12), MD4Constraint::One(13), MD4Constraint::One(14), MD4Constraint::Zero(16), MD4Constraint::Zero(18), MD4Constraint::Zero(19), MD4Constraint::Zero(20), MD4Constraint::Equal(22), MD4Constraint::One(21), MD4Constraint::Equal(25)],
+            // d3
+            vec![MD4Constraint::One(12), MD4Constraint::One(13), MD4Constraint::One(14), MD4Constraint::Zero(16), MD4Constraint::Zero(19), MD4Constraint::One(20), MD4Constraint::One(21), MD4Constraint::Zero(22), MD4Constraint::One(25), MD4Constraint::Equal(29)],
+            // c3
+            vec![MD4Constraint::One(16), MD4Constraint::Zero(19), MD4Constraint::Zero(20), MD4Constraint::Zero(21), MD4Constraint::Zero(22), MD4Constraint::Zero(25), MD4Constraint::One(29), MD4Constraint::Equal(31)],
+            // b3
+            vec![MD4Constraint::Zero(19), MD4Constraint::One(20), MD4Constraint::One(21), MD4Constraint::Equal(22), MD4Constraint::One(25), MD4Constraint::Zero(29), MD4Constraint::Zero(31)],
+            // a4
+            vec![MD4Constraint::Zero(22), MD4Constraint::Zero(25), MD4Constraint::Equal(26), MD4Constraint::Equal(28), MD4Constraint::One(29), MD4Constraint::Zero(31)],
+            // d4
+            vec![MD4Constraint::Zero(22), MD4Constraint::Zero(25), MD4Constraint::One(26), MD4Constraint::One(28), MD4Constraint::Zero(29), MD4Constraint::One(31)],
+            // c4
+            vec![MD4Constraint::Equal(18), MD4Constraint::One(22), MD4Constraint::One(25), MD4Constraint::Zero(26), MD4Constraint::Zero(28), MD4Constraint::Zero(29)],
+            // b4
+            vec![MD4Constraint::Zero(18), MD4Constraint::Equal(25), MD4Constraint::One(26), MD4Constraint::One(28), MD4Constraint::Zero(29), MD4Constraint::Equal(31)],
+            // // a5
+            vec![MD4Constraint::EqOffset(18, 2), MD4Constraint::One(25), MD4Constraint::Zero(26), MD4Constraint::One(28), MD4Constraint::One(31)],
+            // // d5
+            vec![MD4Constraint::Equal(18), MD4Constraint::EqOffset(25, 2), MD4Constraint::EqOffset(26, 2), MD4Constraint::EqOffset(28, 2), MD4Constraint::EqOffset(31, 2)],
+            // // c5
+            // vec![MD4Constraint::Equal(25), MD4Constraint::Equal(26), MD4Constraint::Equal(28), MD4Constraint::Equal(29), MD4Constraint::Equal(31)],
+            // // b5
+            // vec![MD4Constraint::Equal(28), MD4Constraint::One(29), MD4Constraint::Zero(31)],
+            // // a6
+            // vec![MD4Constraint::One(28), MD4Constraint::One(31)],
+            // // d6
+            // vec![MD4Constraint::Equal(28)],
+            // // c6
+            // vec![MD4Constraint::Equal(28), MD4Constraint::Neg(29), MD4Constraint::Neg(31)],
+            // // b6
+            // vec![],
+            // // a7
+            // vec![],
+            // // d7
+            // vec![],
+            // // c7
+            // vec![],
+            // // b7
+            // vec![],
+            // // a8
+            // vec![],
+            // // d8
+            // vec![],
+            // // c8
+            // vec![],
+            // // b8
+            // vec![],
+            // // a9
+            // vec![],
+            // // d9
+            // vec![],
+            // // c9
+            // vec![],
+            // // b9
+            // vec![MD4Constraint::One(31)],
+            // // a10
+            // vec![MD4Constraint::One(31)],
+            ];
+}
+
+fn apply_md4_constraints(blocks: &mut [u32], constraints: &[Vec<MD4Constraint>]) -> [u32; 4] {
+    // println!("Len {}", constraints.len());
+    assert!(constraints.len() == 16);
+    let mut state = [MD4::I0, MD4::I1, MD4::I2, MD4::I3];
+    for (step, step_constraints) in constraints.iter().enumerate() {
+        let mut offset = step % 4;
+        if offset > 0 {
+            offset = 4 - offset;
+        }
+        let a_idx: usize = offset;
+        let a_prev = state[a_idx];
+        let b_idx = (offset + 1) % 4;
+        let c_idx = (b_idx + 1) % 4;
+        let d_idx = (c_idx + 1) % 4;
+        let word_idxs = [a_idx, b_idx, c_idx, d_idx];
+
+        let mut x = blocks[MD4::WORD_ORDER[step]];
+        for constraint in step_constraints {
+            MD4::ff1(&mut state, step, x);
+            let a_next = state[a_idx];
+            let fixed_a1 = constraint.apply(a_next, state, word_idxs);
+            x = MD4::ff2word(
+                fixed_a1,
+                a_prev,
+                state[b_idx],
+                state[c_idx],
+                state[d_idx],
+                MD4::SHIFTS[step % 4],
+            );
+            state[a_idx] = a_prev; // Restore to previous state because we always advance outside the constraint
+        }
+        // if blocks[MD4::WORD_ORDER[step]] != x {
+        //     println!("\t{}: Updating word {:#04x} to {:#04x}", step, blocks[MD4::WORD_ORDER[step]].to_le(), x.to_le());
+        // }
+        blocks[MD4::WORD_ORDER[step]] = x;
+        MD4::ff1(&mut state, step, x);
+    }
+    state
+}
+
+fn apply_md4_round2_contraints(blocks: &mut [u32], state: [u32; 4], constraints: &[Vec<MD4Constraint>]) -> [u32; 4] {
+    let mut state = state;
+    let a0 = MD4::I0;
+    let b0 = MD4::I1;
+    let c0 = MD4::I2;
+    let d0 = MD4::I3;
+    let initial_state = [a0, b0, c0, d0];
+
+    for (step, word_idx) in MD4::WORD_ORDER.iter().enumerate().skip(16).take(16) {
+        let mut offset = step % 4;
+        if offset > 0 {
+            offset = 4 - offset;
+        }
+        let a_idx: usize = offset;
+        let b_idx = (offset + 1) % 4;
+        let c_idx = (b_idx + 1) % 4;
+        let d_idx = (c_idx + 1) % 4;
+
+        let a4 = state[a_idx];
+        MD4::gg1(&mut state, step, blocks[*word_idx]);
+
+        // a_5,{18,25,26,28,31}=c_4,i
+        if step == 16 {
+            // println!("Aya!");
+            assert_eq!(*word_idx, 0);
+            assert_eq!(a_idx, 0);
+            assert_eq!(b_idx, 1);
+            assert_eq!(c_idx, 2);
+            assert_eq!(d_idx, 3);
+            // a5
+            // for i in [18, 25, 26, 28, 31] {
+            for constraint in &constraints[16] {
+            // for i in [18] {
+                let mut a5 = state[a_idx];
+                assert_ne!(a4, a5);
+                let word_idxs = [a_idx, b_idx, c_idx, d_idx];
+                println!("{:?} says {:?}", constraint, constraint.require(a5, state, word_idxs));
+                a5 = constraint.apply(a5, state, word_idxs);
+                // let expected = if i == 18 {
+                //     println!("Constraint says {:?}", MD4Constraint::EqOffset(18, 2).require(a5, state, word_idxs));
+                //     state[b_idx].bit(i)
+                // } else if i == 26 {
+                //     1
+                // } else {
+                //     0
+                // };
+                // // let old_value = state[b_idx];
+                // if a5.bit(i) != expected {
+                //     println!("Aya fixing! Step {} Index {}", step, i);
+                //     a5 = a5.flip_bit(i);
+                // }
+                let m0 = MD4::gg2word(a5, a4, state[1], state[2], state[3], MD4::SHIFTS[4 + step % 4]);
+                println!("Updating word 0 {:#04x} to {:#04x}", blocks[0].to_be(), m0.to_be());
+                let mut working_state = initial_state;
+
+                MD4::ff1(&mut working_state, 0, m0);
+                let a1_prime = working_state[0];
+                working_state[0] = a0;
+
+                MD4::ff1(&mut working_state, 0, blocks[0]);
+                let a1 = working_state[0];
+                
+                MD4::ff1(&mut working_state, 1, blocks[1]);
+                let d1 = working_state[3];
+                assert_ne!(d1, d0);
+                assert_eq!(working_state[2], c0);
+                let m1 = d1.rotate_right(MD4::SHIFTS[1])
+                    .overflowing_sub(d0).0
+                    .overflowing_sub(MD4::f(a1_prime, b0, c0)).0;
+                println!("Updating word 1 {:#04x} to {:#04x}", blocks[1].to_be(), m1.to_be());
+
+
+                MD4::ff1(&mut working_state, 2, blocks[2]);
+                let c1 = working_state[2];
+                assert_ne!(c1, c0);
+                let m2 = c1.rotate_right(MD4::SHIFTS[2])
+                    .overflowing_sub(c0).0
+                    .overflowing_sub(MD4::f(d1, a1_prime, b0)).0;
+                println!("Updating word 2 {:#04x} to {:#04x}", blocks[2].to_be(), m2.to_be());
+
+
+                MD4::ff1(&mut working_state, 3, blocks[3]);
+                let b1 = working_state[1];
+
+                let m3 = b1.rotate_right(MD4::SHIFTS[3])
+                    .overflowing_sub(b0).0
+                    .overflowing_sub(MD4::f(c1, d1, a1_prime)).0;
+                println!("Updating word 3 {:#04x} to {:#04x}", blocks[3].to_be(), m3.to_be());
+
+
+                MD4::ff1(&mut working_state, 4, blocks[4]);
+                let a2 = working_state[0];
+                let m4 = a2.rotate_right(MD4::SHIFTS[0])
+                    .overflowing_sub(a1_prime).0
+                    .overflowing_sub(MD4::f(b1, c1, d1)).0;
+                println!("Updating word 4 {:#04x} to {:#04x}", blocks[4].to_be(), m4.to_be());
+
+            
+                blocks[0] = m0;
+                blocks[1] = m1;
+                blocks[2] = m2;
+                blocks[3] = m3;
+                blocks[4] = m4;
+
+                // Restore state and recalculate
+                state[0] = a4;
+                MD4::gg1(&mut state, step, blocks[*word_idx]);
+            }
+        }
+    }
+
+    state
+}
+
+fn verify_md4_constraints(blocks: &[u32], constraints: &[Vec<MD4Constraint>]) -> Result<()> {
+    // assert!(constraints.len() <= 16);
+    let mut state = [MD4::I0, MD4::I1, MD4::I2, MD4::I3];
+    let ops = [MD4::ff1, MD4::gg1, MD4::hh1];
+    for (step, step_constraints) in constraints.iter().enumerate() {
+        let round = step / 16;
+        let op = ops[step / 16];
+        let mut offset: usize = step % 4;
+        if offset > 0 {
+            offset = 4 - offset;
+        }
+        let a_idx: usize = offset;
+        let b_idx = (offset + 1) % 4;
+        let c_idx = (b_idx + 1) % 4;
+        let d_idx = (c_idx + 1) % 4;
+        let word_idxs = [a_idx, b_idx, c_idx, d_idx];
+
+        let x = blocks[MD4::WORD_ORDER[step]];
+        op(&mut state, step, x);
+        for constraint in step_constraints {
+            let a1 = state[a_idx];
+            let error_msg = format!("Step {}: {:?}", step, constraint);
+            ensure!(constraint.require(a1, state, word_idxs).is_ok(), error_msg);
+        }
+        // println!("Step {}\t: {:#04x}{:#04x}{:#04x}{:#04x}", step, state[0].to_le(), state[1].to_le(), state[2].to_le(), state[3].to_le());
+        // let mut md4 = MD4::default();
+        // MD4::ff1(&mut state, step, MD4::SHIFTS[step % 4], x);
+    }
+    Ok(())
+}
+
+fn create_md4_collision(msg2_limit: usize) -> Result<(Vec<u8>, Vec<u8>, usize)> {
+    let mut count = 0;
+    let mut rng = OsRng;
+    loop {
+        let mut msg1 = vec![0u8; MD4::block_size()];
+        rng.fill_bytes(&mut msg1);
+        let mut block: Vec<u32> = to_w32_be(&msg1).iter().map(|w| u32::from_be(*w)).collect();
+        apply_md4_constraints(&mut block, &MD4CollisionConstraints[0..16]);
+        let msg1 = block
+            .iter()
+            .flat_map(|b| b.to_le_bytes())
+            .collect::<Vec<u8>>();
+        for _ in 0..msg2_limit {
+            if count % 10000 == 0 {
+                println!("Trial {}", count);
+            }
+            let mut msg2 = msg1.clone();
+            // let byte1 = rng.gen_range(0..msg2.len());
+            // let byte2= rng.gen_range(0..msg2.len());
+            // let byte3 = rng.gen_range(0..msg2.len());
+            msg2[1] ^= 1;
+            msg2[4] ^= 1;
+            msg2[28] ^= 1;
+            count += 1;
+
+            if MD4::oneshot_digest(&msg1) == MD4::oneshot_digest(&msg2) {
+                return Ok((msg1, msg2, count));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -1189,10 +1554,58 @@ mod tests {
                 "\t{}\n{} with {}+{}={} compressions",
                 forged_msg.0.encode_hex::<String>(),
                 forged_commitment.encode_hex::<String>(),
-                commitment.compressions, forged_msg.1, commitment.compressions + forged_msg.1
+                commitment.compressions,
+                forged_msg.1,
+                commitment.compressions + forged_msg.1
             );
             assert_eq!(committed_hash, forged_commitment);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn challenge55_smoke() -> Result<()> {
+        let mut msg = vec![0u8; MD4::block_size()];
+        let mut rng = OsRng;
+        // let used_constraints = &MD4CollisionConstraints;
+        for _ in 0..2 {
+            rng.fill_bytes(&mut msg);
+            println!("Old msg: {}", msg.encode_hex::<String>());
+            let mut block: Vec<u32> = to_w32_be(&msg).iter().map(|w| u32::from_be(*w)).collect();
+            let state = apply_md4_constraints(&mut block, &MD4CollisionConstraints[0..16]);
+            let msg = block
+                .iter()
+                .flat_map(|b| b.to_le_bytes())
+                .collect::<Vec<u8>>();
+
+            apply_md4_round2_contraints(&mut block, state, &MD4CollisionConstraints);
+            println!("New msg: {}", msg.encode_hex::<String>());
+
+            verify_md4_constraints(&block, &MD4CollisionConstraints[0..17])?;
+
+            MD4::oneshot_digest(&msg);
+            println!();
+        }
+
+        let sample = hex::decode("a6af943ce36f0cf4adcb12bef7f0dc1f526dd914bd3da3cafde14467ab129e640b4c41819915cb43db752155ae4b895fc71b9b0d384d06ef3118bbc643ae6384")?;
+        let block: Vec<u32> = to_w32_be(&sample)
+            .iter()
+            .map(|w| u32::from_be(*w))
+            .collect();
+        verify_md4_constraints(&block, &MD4CollisionConstraints)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn challenge55() -> Result<()> {
+        let collision = create_md4_collision(1)?;
+        println!("After {} attempts", collision.2);
+        assert_ne!(collision.0, collision.1);
+        let hash1: String = MD4::oneshot_digest(&collision.0).encode_hex();
+        let hash2: String = MD4::oneshot_digest(&collision.1).encode_hex();
+        assert_eq!(hash1, hash2);
+
         Ok(())
     }
 }

@@ -3,14 +3,11 @@
 use anyhow::{Context, Result};
 use const_format::concatcp;
 use lazy_static::lazy_static;
+use num_traits::{zero, One, Zero};
 use rand::seq::IteratorRandom;
 use rand_core::OsRng;
 use std::{
-    collections::HashMap,
-    fs::File,
-    io::{BufRead, BufReader, Lines},
-    ops::Deref,
-    usize, vec,
+    collections::HashMap, fmt::Debug, fs::File, io::{BufRead, BufReader, Lines}, ops::{BitAnd, BitOr, Deref, Not, Shl}, usize, vec
 };
 
 mod aes;
@@ -21,8 +18,8 @@ mod oracles;
 mod padding;
 mod prng;
 mod rsa;
-mod srp;
 mod set7;
+mod srp;
 
 #[derive(Debug)]
 pub struct PublicKey<T>(T);
@@ -308,6 +305,48 @@ where
     // println!("Result: {}\nIV: {}", hex::encode(&result), hex::encode(&iv));
     // // todo!();
     // result
+}
+
+trait BitArray {
+    fn bit(&self, idx: usize) -> Self;
+    fn set_bit(&self, idx: usize, val: Self) -> Self;
+    fn flip_bit(&self, idx: usize) -> Self;
+}
+
+impl<W> BitArray for W
+where
+    W: Shl<usize, Output = W> + BitAnd<W, Output = W> + BitOr<W, Output = W> + Not<Output = W> + One + Zero + Copy + Eq + Debug,
+{
+    fn bit(&self, idx: usize) -> Self {
+        let mask = W::one() << idx;
+        if (*self & mask).is_zero() {
+            Self::zero()
+        } else {
+            Self::one()
+        }
+    }
+    
+    fn set_bit(&self, idx: usize, val: Self) -> Self {
+        let mut mask = W::one() << idx;
+        if val.is_one() {
+            *self | mask
+        } else if val.is_zero() {
+            mask = !mask;
+            *self & mask
+        } else {
+            panic!("Invalid value {:?}", val);
+        }
+    }
+
+    fn flip_bit(&self, idx: usize) -> Self {
+        if self.bit(idx).is_one() {
+            self.set_bit(idx, W::zero())
+        } else {
+            self.set_bit(idx, W::one())
+        }
+    }
+
+    
 }
 
 #[cfg(test)]
