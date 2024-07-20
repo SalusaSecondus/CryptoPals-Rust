@@ -511,14 +511,14 @@ impl MD4 {
         );
     }
 
-    pub fn ff(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
-        *A = Self::rot(
+    pub fn ff(A: u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) -> u32 {
+        Self::rot(
             A.overflowing_add(Self::f(B, C, D))
                 .0
                 .overflowing_add(X[i])
                 .0,
             s,
-        );
+        )
     }
 
     pub fn ff2word(a1: u32, a0: u32, b: u32, c: u32, d: u32, s: u32) -> u32 {
@@ -553,8 +553,8 @@ impl MD4 {
             Self::SHIFTS[4 * round + (step % 4)],
         );
     }
-    pub fn gg(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
-        *A = Self::rot(
+    pub fn gg(A: u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) -> u32 {
+        Self::rot(
             A.overflowing_add(Self::g(B, C, D))
                 .0
                 .overflowing_add(X[i])
@@ -562,17 +562,15 @@ impl MD4 {
                 .overflowing_add(0o13240474631)
                 .0,
             s,
-        );
+        )
     }
 
     pub fn gg2word(a1: u32, a0: u32, b: u32, c: u32, d: u32, s: u32) -> u32 {
+        assert_ne!(a1, a0);
         a1.rotate_right(s)
-            .overflowing_sub(Self::g(b, c, d))
-            .0
-            .overflowing_sub(a0)
-            .0
-            .overflowing_sub(0o13240474631)
-            .0
+            .wrapping_sub(Self::g(b, c, d))
+            .wrapping_sub(a0)
+            .wrapping_sub(0o13240474631)
     }
 
     pub fn hh1(state: &mut [u32], step: usize, x: u32) {
@@ -601,8 +599,8 @@ impl MD4 {
         );
     }
 
-    pub fn hh(A: &mut u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) {
-        *A = Self::rot(
+    pub fn hh(A: u32, B: u32, C: u32, D: u32, i: usize, s: u32, X: &[u32]) -> u32{
+        Self::rot(
             A.overflowing_add(Self::h(B, C, D))
                 .0
                 .overflowing_add(X[i])
@@ -610,7 +608,7 @@ impl MD4 {
                 .overflowing_add(0o15666365641)
                 .0,
             s,
-        );
+        )
     }
 }
 

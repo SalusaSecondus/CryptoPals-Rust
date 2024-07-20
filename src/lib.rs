@@ -2,8 +2,9 @@
 
 use anyhow::{Context, Result};
 use const_format::concatcp;
+use hex::ToHex;
 use lazy_static::lazy_static;
-use num_traits::{zero, One, Zero};
+use num_traits::{zero, One, PrimInt, ToBytes, Zero};
 use rand::seq::IteratorRandom;
 use rand_core::OsRng;
 use std::{
@@ -20,6 +21,7 @@ mod prng;
 mod rsa;
 mod set7;
 mod srp;
+mod rc4;
 
 #[derive(Debug)]
 pub struct PublicKey<T>(T);
@@ -311,11 +313,12 @@ trait BitArray {
     fn bit(&self, idx: usize) -> Self;
     fn set_bit(&self, idx: usize, val: Self) -> Self;
     fn flip_bit(&self, idx: usize) -> Self;
+    fn to_le_hex(&self) -> String;
 }
 
 impl<W> BitArray for W
 where
-    W: Shl<usize, Output = W> + BitAnd<W, Output = W> + BitOr<W, Output = W> + Not<Output = W> + One + Zero + Copy + Eq + Debug,
+    W: Debug + PrimInt + ToBytes,
 {
     fn bit(&self, idx: usize) -> Self {
         let mask = W::one() << idx;
@@ -328,14 +331,20 @@ where
     
     fn set_bit(&self, idx: usize, val: Self) -> Self {
         let mut mask = W::one() << idx;
-        if val.is_one() {
+        let candidate = if val.is_one() {
             *self | mask
         } else if val.is_zero() {
             mask = !mask;
             *self & mask
         } else {
             panic!("Invalid value {:?}", val);
+        };
+        if candidate.bit(idx) != val {
+            println!("{:?}[{}] = {:?}\n{:?}[{}] = {:?}\nWanted = {:?}", self, idx, self.bit(idx), candidate, idx, candidate.bit(idx), val);
+            println!("Mask = {:?}", mask);
         }
+        assert_eq!(candidate.bit(idx), val);
+        candidate
     }
 
     fn flip_bit(&self, idx: usize) -> Self {
@@ -346,6 +355,9 @@ where
         }
     }
 
+    fn to_le_hex(&self) -> String {
+        self.to_le_bytes().encode_hex::<String>()
+    }
     
 }
 
