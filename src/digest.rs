@@ -427,8 +427,9 @@ impl MD4 {
         3, 5, 9, 13,
         3, 9, 11, 15];
     pub const WORD_ORDER: [usize; 48] = [
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10,
-        14, 3, 7, 11, 15, 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15,
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+        0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15,
+        0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15,
     ];
     pub fn from_hash(hash: &[u8], length: usize) -> Self {
         let word: Vec<u32> = to_w32_be(hash).iter().map(|w| u32::from_be(*w)).collect();
@@ -441,29 +442,29 @@ impl MD4 {
         }
     }
 
+    pub fn compress_inner(state: [u32; 4], blocks: &[u32], start: usize, end: usize) -> [u32; 4] {
+        let mut state = state;
+        let ops = [Self::ff1, Self::gg1, Self::hh1];
+
+        for step in start..end {
+            let round = step / 16;
+            let word_idx = Self::WORD_ORDER[step];
+            let op = ops[round];
+            op(
+                &mut state,
+                step,
+                blocks[word_idx],
+            );
+        }
+        state
+    }
     pub fn compress(&mut self, chunk: &[u8]) {
         // println!("MD4 State- {:?}", self.h);
 
         let X: Vec<u32> = to_w32_be(chunk);
         let X: Vec<u32> = X.iter().map(|w| u32::from_be(*w)).collect();
-        let mut state = self.h;
-        // let mut A = self.h[0];
-        // let mut B = self.h[1];
-        // let mut C = self.h[2];
-        // let mut D = self.h[3];
+        let state = Self::compress_inner(self.h, &X, 0, Self::WORD_ORDER.len());
 
-        /* Update the message digest buffer */
-        let ops = [Self::ff1, Self::gg1, Self::hh1];
-        for (step, word_idx) in Self::WORD_ORDER.iter().enumerate() {
-            let round = step / 16;
-            let op = ops[round];
-            op(
-                &mut state,
-                step,
-                X[*word_idx],
-            );
-        // println!("STEP {}\t: {:#04x}{:#04x}{:#04x}{:#04x}", step, state[0].to_le(), state[1].to_le(), state[2].to_le(), state[3].to_le());
-        }
         self.h[0] = state[0].overflowing_add(self.h[0]).0;
         self.h[1] = state[1].overflowing_add(self.h[1]).0;
         self.h[2] = state[2].overflowing_add(self.h[2]).0;

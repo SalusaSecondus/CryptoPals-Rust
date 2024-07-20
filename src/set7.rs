@@ -711,6 +711,16 @@ impl MD4Constraint {
         ensure!(new_word == self.apply(new_word, state, word_idxs));
         Ok(())
     }
+
+    fn i(&self) -> usize {
+        match self {
+            MD4Constraint::Equal(i) |
+            MD4Constraint::One(i) |
+            MD4Constraint::Zero(i) |
+            MD4Constraint::Neg(i) |
+            MD4Constraint::EqOffset(i, _) => *i,
+        }
+    }
 }
 
 impl Display for MD4Constraint {
@@ -731,13 +741,21 @@ lazy_static! {
             // b1
             vec![MD4Constraint::One(6), MD4Constraint::Zero(7), MD4Constraint::Zero(10), MD4Constraint::Zero(25)],
             // a2
-            vec![MD4Constraint::One(7), MD4Constraint::One(10), MD4Constraint::Zero(25), MD4Constraint::Equal(13)],
+            vec![MD4Constraint::One(7), MD4Constraint::One(10), MD4Constraint::Zero(25), MD4Constraint::Equal(13),
+                MD4Constraint::Equal(16), MD4Constraint::Equal(17), MD4Constraint::Equal(19), MD4Constraint::Equal(22)
+            ],
             // d2
-            vec![MD4Constraint::Zero(13), MD4Constraint::Equal(18), MD4Constraint::Equal(19), MD4Constraint::Equal(20), MD4Constraint::Equal(21), MD4Constraint::One(25)],
+            vec![MD4Constraint::Zero(13), MD4Constraint::Equal(18), MD4Constraint::Equal(19), MD4Constraint::Equal(20), MD4Constraint::Equal(21), MD4Constraint::One(25),
+                MD4Constraint::Zero(16), MD4Constraint::Zero(17), MD4Constraint::Zero(19), MD4Constraint::Zero(22)
+            ],
             // c2
-            vec![MD4Constraint::Equal(12), MD4Constraint::Zero(13), MD4Constraint::Equal(14), MD4Constraint::Zero(18), MD4Constraint::Zero(19), MD4Constraint::One(20), MD4Constraint::Zero(21)],
+            vec![MD4Constraint::Equal(12), MD4Constraint::Zero(13), MD4Constraint::Equal(14), MD4Constraint::Zero(18), MD4Constraint::Zero(19), MD4Constraint::One(20), MD4Constraint::Zero(21),
+                MD4Constraint::Zero(16), MD4Constraint::Zero(17), MD4Constraint::Zero(19), MD4Constraint::Zero(22)
+            ],
             // b2
-            vec![MD4Constraint::One(12), MD4Constraint::One(13), MD4Constraint::Zero(14), MD4Constraint::Equal(16), MD4Constraint::Zero(18), MD4Constraint::Zero(19), MD4Constraint::Zero(20), MD4Constraint::Zero(21)],
+            vec![MD4Constraint::One(12), MD4Constraint::One(13), MD4Constraint::Zero(14), MD4Constraint::Equal(16), MD4Constraint::Zero(18), MD4Constraint::Zero(19), MD4Constraint::Zero(20), MD4Constraint::Zero(21),
+                MD4Constraint::Zero(16), MD4Constraint::Zero(17), MD4Constraint::Zero(19), MD4Constraint::Zero(22)
+            ],
             // a3
             vec![MD4Constraint::One(12), MD4Constraint::One(13), MD4Constraint::One(14), MD4Constraint::Zero(16), MD4Constraint::Zero(18), MD4Constraint::Zero(19), MD4Constraint::Zero(20), MD4Constraint::Equal(22), MD4Constraint::One(21), MD4Constraint::Equal(25)],
             // d3
@@ -759,7 +777,7 @@ lazy_static! {
             // // d5
             vec![MD4Constraint::Equal(18), MD4Constraint::EqOffset(25, 2), MD4Constraint::EqOffset(26, 2), MD4Constraint::EqOffset(28, 2), MD4Constraint::EqOffset(31, 2)],
             // // c5
-            // vec![MD4Constraint::Equal(25), MD4Constraint::Equal(26), MD4Constraint::Equal(28), MD4Constraint::Equal(29), MD4Constraint::Equal(31)],
+            vec![MD4Constraint::Equal(25), MD4Constraint::Equal(26), MD4Constraint::Equal(28), MD4Constraint::Equal(29), MD4Constraint::Equal(31)],
             // // b5
             // vec![MD4Constraint::Equal(28), MD4Constraint::One(29), MD4Constraint::Zero(31)],
             // // a6
@@ -841,11 +859,11 @@ fn apply_md4_constraints(blocks: &mut [u32], constraints: &[Vec<MD4Constraint>])
 
 fn apply_md4_round2_contraints(blocks: &mut [u32], state: [u32; 4], constraints: &[Vec<MD4Constraint>]) -> [u32; 4] {
     let mut state = state;
-    let a0 = MD4::I0;
-    let b0 = MD4::I1;
-    let c0 = MD4::I2;
-    let d0 = MD4::I3;
-    let initial_state = [a0, b0, c0, d0];
+    // let a0 = MD4::I0;
+    // let b0 = MD4::I1;
+    // let c0 = MD4::I2;
+    // let d0 = MD4::I3;
+    let initial_state = [MD4::I0, MD4::I1, MD4::I2, MD4::I3];
 
     for (step, word_idx) in MD4::WORD_ORDER.iter().enumerate().skip(16).take(16) {
         let mut offset = step % 4;
@@ -857,95 +875,130 @@ fn apply_md4_round2_contraints(blocks: &mut [u32], state: [u32; 4], constraints:
         let c_idx = (b_idx + 1) % 4;
         let d_idx = (c_idx + 1) % 4;
 
-        let a4 = state[a_idx];
+        // let a4 = state[a_idx];
+        let prev_state = state;
         MD4::gg1(&mut state, step, blocks[*word_idx]);
 
         // a_5,{18,25,26,28,31}=c_4,i
-        if step == 16 {
-            // println!("Aya!");
-            assert_eq!(*word_idx, 0);
-            assert_eq!(a_idx, 0);
-            assert_eq!(b_idx, 1);
-            assert_eq!(c_idx, 2);
-            assert_eq!(d_idx, 3);
-            // a5
-            // for i in [18, 25, 26, 28, 31] {
-            for constraint in &constraints[16] {
-            // for i in [18] {
+        if step == 16 || step == 17 { // a5, d5
+            let m_start;
+            let fix_step_start;
+            if step == 16 {
+                m_start = 0;
+                fix_step_start = 0;
+            } else if step == 17 {
+                m_start = 4;
+                fix_step_start = 4;
+            } else {
+                panic!();
+            }
+
+            for constraint in &constraints[step] {
+                let a4 = prev_state[a_idx];
                 let mut a5 = state[a_idx];
                 assert_ne!(a4, a5);
                 let word_idxs = [a_idx, b_idx, c_idx, d_idx];
-                println!("{:?} says {:?}", constraint, constraint.require(a5, state, word_idxs));
-                a5 = constraint.apply(a5, state, word_idxs);
-                // let expected = if i == 18 {
-                //     println!("Constraint says {:?}", MD4Constraint::EqOffset(18, 2).require(a5, state, word_idxs));
-                //     state[b_idx].bit(i)
-                // } else if i == 26 {
-                //     1
-                // } else {
-                //     0
-                // };
-                // // let old_value = state[b_idx];
-                // if a5.bit(i) != expected {
-                //     println!("Aya fixing! Step {} Index {}", step, i);
-                //     a5 = a5.flip_bit(i);
+                // println!("{}: {:?} says {:?}", step, constraint, constraint.require(a5, state, word_idxs));
+                if constraint.require(a5, state, word_idxs).is_ok() {
+                    continue;
+                }
+                // let i = constraint.i();
+                // let old_block = blocks[m_start];
+                // blocks[m_start] = old_block.wrapping_add(1 << (i - 4));
+                // state = prev_state;
+                // MD4::gg1(&mut state, step, blocks[*word_idx]);
+                // if constraint.require(a5, state, word_idxs).is_err() {
+                //     blocks[m_start] = old_block.wrapping_sub(1 << (i - 4));
+                //     state = prev_state;
+                //     MD4::gg1(&mut state, step, blocks[*word_idx]);
                 // }
-                let m0 = MD4::gg2word(a5, a4, state[1], state[2], state[3], MD4::SHIFTS[4 + step % 4]);
-                println!("Updating word 0 {:#04x} to {:#04x}", blocks[0].to_be(), m0.to_be());
-                let mut working_state = initial_state;
+                // let m0 = blocks[m_start];
+                // This next step isn't quite right because it just flips a bit and reverse calculates it rather than doing the correct math.
+                a5 = constraint.apply(a5, state, word_idxs);
+                
+                let m0 = MD4::gg2word(a5, a4, state[b_idx], state[c_idx], state[d_idx], MD4::SHIFTS[4 + step % 4]);
+                // println!("Updating word 0 {:#04x} to {:#04x}", blocks[m_start + 0].to_be(), m0.to_be());
+                let mut working_state = MD4::compress_inner(initial_state, blocks, 0, fix_step_start);
+                let a0 = working_state[0];
+                let b0 = working_state[1];
+                let c0 = working_state[2];
+                let d0 = working_state[3];
 
-                MD4::ff1(&mut working_state, 0, m0);
+                MD4::ff1(&mut working_state, fix_step_start, m0);
                 let a1_prime = working_state[0];
                 working_state[0] = a0;
 
-                MD4::ff1(&mut working_state, 0, blocks[0]);
+                MD4::ff1(&mut working_state, fix_step_start, blocks[m_start]);
                 let a1 = working_state[0];
                 
-                MD4::ff1(&mut working_state, 1, blocks[1]);
+                MD4::ff1(&mut working_state, fix_step_start + 1, blocks[m_start + 1]);
                 let d1 = working_state[3];
                 assert_ne!(d1, d0);
                 assert_eq!(working_state[2], c0);
                 let m1 = d1.rotate_right(MD4::SHIFTS[1])
                     .overflowing_sub(d0).0
                     .overflowing_sub(MD4::f(a1_prime, b0, c0)).0;
-                println!("Updating word 1 {:#04x} to {:#04x}", blocks[1].to_be(), m1.to_be());
+                // println!("Updating word 1 {:#04x} to {:#04x}", blocks[m_start + 1].to_be(), m1.to_be());
 
 
-                MD4::ff1(&mut working_state, 2, blocks[2]);
+                MD4::ff1(&mut working_state, fix_step_start + 2, blocks[m_start + 2]);
                 let c1 = working_state[2];
                 assert_ne!(c1, c0);
                 let m2 = c1.rotate_right(MD4::SHIFTS[2])
                     .overflowing_sub(c0).0
                     .overflowing_sub(MD4::f(d1, a1_prime, b0)).0;
-                println!("Updating word 2 {:#04x} to {:#04x}", blocks[2].to_be(), m2.to_be());
+                // println!("Updating word 2 {:#04x} to {:#04x}", blocks[m_start + 2].to_be(), m2.to_be());
 
 
-                MD4::ff1(&mut working_state, 3, blocks[3]);
+                MD4::ff1(&mut working_state, fix_step_start + 3, blocks[m_start + 3]);
                 let b1 = working_state[1];
 
                 let m3 = b1.rotate_right(MD4::SHIFTS[3])
                     .overflowing_sub(b0).0
                     .overflowing_sub(MD4::f(c1, d1, a1_prime)).0;
-                println!("Updating word 3 {:#04x} to {:#04x}", blocks[3].to_be(), m3.to_be());
+                // println!("Updating word 3 {:#04x} to {:#04x}", blocks[m_start + 3].to_be(), m3.to_be());
 
 
-                MD4::ff1(&mut working_state, 4, blocks[4]);
+                MD4::ff1(&mut working_state, fix_step_start + 4, blocks[m_start + 4]);
                 let a2 = working_state[0];
                 let m4 = a2.rotate_right(MD4::SHIFTS[0])
                     .overflowing_sub(a1_prime).0
                     .overflowing_sub(MD4::f(b1, c1, d1)).0;
-                println!("Updating word 4 {:#04x} to {:#04x}", blocks[4].to_be(), m4.to_be());
+                // println!("Updating word 4 {:#04x} to {:#04x}", blocks[m_start + 4].to_be(), m4.to_be());
 
             
-                blocks[0] = m0;
-                blocks[1] = m1;
-                blocks[2] = m2;
-                blocks[3] = m3;
-                blocks[4] = m4;
+                blocks[m_start] = m0;
+                blocks[m_start + 1] = m1;
+                blocks[m_start + 2] = m2;
+                blocks[m_start + 3] = m3;
+                blocks[m_start + 4] = m4;
 
                 // Restore state and recalculate
-                state[0] = a4;
+                // state[0] = a4;
+                state = prev_state;
                 MD4::gg1(&mut state, step, blocks[*word_idx]);
+            }
+        } else if step == 18 { // c5
+            // assert_eq!(*word_idx, 5);
+            for constraint in &constraints[step] {                
+                let c5 = state[2];
+                let word_idxs = [a_idx, b_idx, c_idx, d_idx];
+                // println!("{}: {:?} says {:?}", step, constraint, constraint.require(c5, state, word_idxs));
+                if constraint.require(c5, state, word_idxs).is_ok() {
+                    continue;
+                }
+                let i = constraint.i();
+                // c5 = constraint.apply(c5, state, word_idxs);
+                // let m5 = MD4::gg2word(c5, c4, state[b_idx], state[c_idx], state[d_idx], MD4::SHIFTS[4 + step % 4]);
+                let m5 = blocks[5].overflowing_add(1 << (i - 17)).0;
+                // println!("Updating word 5 {:#04x} to {:#04x}", blocks[5].to_be(), m5.to_be());
+                blocks[5] = m5;
+                let m8 = blocks[8].overflowing_sub(1 << (i - 10)).0;
+                // println!("Updating word 8 {:#04x} to {:#04x}", blocks[8].to_be(), m8.to_be());
+                blocks[8] = m8;
+                let m9 = blocks[9].overflowing_sub(1 << (i - 10)).0;
+                // println!("Updating word 9 {:#04x} to {:#04x}", blocks[9].to_be(), m9.to_be());
+                blocks[9] = m9;
             }
         }
     }
@@ -984,18 +1037,65 @@ fn verify_md4_constraints(blocks: &[u32], constraints: &[Vec<MD4Constraint>]) ->
     Ok(())
 }
 
-fn create_md4_collision(msg2_limit: usize) -> Result<(Vec<u8>, Vec<u8>, usize)> {
-    let mut count = 0;
+fn create_md4_collision_candidate() -> Result<Vec<u8>> {
     let mut rng = OsRng;
     loop {
         let mut msg1 = vec![0u8; MD4::block_size()];
         rng.fill_bytes(&mut msg1);
         let mut block: Vec<u32> = to_w32_be(&msg1).iter().map(|w| u32::from_be(*w)).collect();
-        apply_md4_constraints(&mut block, &MD4CollisionConstraints[0..16]);
-        let msg1 = block
-            .iter()
-            .flat_map(|b| b.to_le_bytes())
-            .collect::<Vec<u8>>();
+        let state = apply_md4_constraints(&mut block, &MD4CollisionConstraints[0..16]);
+        apply_md4_round2_contraints(&mut block, state, &MD4CollisionConstraints);
+        let tmp = verify_md4_constraints(&block, &MD4CollisionConstraints);
+        if tmp.is_err() {
+            // println!("Trying again: {:?}", tmp);
+            continue;
+        }
+        // if verify_md4_constraints(&block, &MD4CollisionConstraints).is_ok() {
+            let msg1 = block
+                .iter()
+                .flat_map(|b| b.to_le_bytes())
+                .collect::<Vec<u8>>();
+            return Ok(msg1);
+        // }
+        // println!("Trying again...");
+    }
+}
+
+fn create_md4_collision(msg2_limit: usize) -> Result<(Vec<u8>, Vec<u8>, usize)> {
+    let pool_size = 4;
+
+    let pool: Pool<ThunkWorker<(Vec<u8>, Vec<u8>, usize)>> = Pool::new(pool_size);
+    let (tx, rx) = channel();
+    // let mut results: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+    // loop {
+        for _ in 0..(pool_size * 2) {
+   
+            pool.execute_to(
+                tx.clone(),
+                Thunk::of(move || create_md4_collision_inner(msg2_limit).unwrap()),
+            );
+        }
+        Ok(rx.recv()?)
+    // }
+        // for r in rx.iter().take(pool_size * 2) {
+        //     count += 1;
+        //     let output = r.0;
+        //     let input = r.1;
+        //     // println!("Compress({}) = {}", input.encode_hex::<String>(), output.encode_hex::<String>());
+        //     if let Some(collision) = results.get(&output) {
+        //         return Ok((collision.to_owned(), input, output, count));
+        //     } else {
+        //         results.insert(output, input);
+        //     }
+        // }
+}
+
+fn create_md4_collision_inner(msg2_limit: usize) -> Result<(Vec<u8>, Vec<u8>, usize)> {
+    let mut count = 0;
+    // let mut rng = OsRng;
+    loop {
+        let msg1 = create_md4_collision_candidate()?;
+        
         for _ in 0..msg2_limit {
             if count % 10000 == 0 {
                 println!("Trial {}", count);
@@ -1565,34 +1665,35 @@ mod tests {
 
     #[test]
     fn challenge55_smoke() -> Result<()> {
-        let mut msg = vec![0u8; MD4::block_size()];
-        let mut rng = OsRng;
+        // let mut msg = vec![0u8; MD4::block_size()];
+        // let mut rng = OsRng;
         // let used_constraints = &MD4CollisionConstraints;
-        for _ in 0..2 {
-            rng.fill_bytes(&mut msg);
-            println!("Old msg: {}", msg.encode_hex::<String>());
-            let mut block: Vec<u32> = to_w32_be(&msg).iter().map(|w| u32::from_be(*w)).collect();
-            let state = apply_md4_constraints(&mut block, &MD4CollisionConstraints[0..16]);
-            let msg = block
-                .iter()
-                .flat_map(|b| b.to_le_bytes())
-                .collect::<Vec<u8>>();
+        for _ in 0..10 {
+            let msg = create_md4_collision_candidate()?;
+            // rng.fill_bytes(&mut msg);
+            // println!("Old msg: {}", msg.encode_hex::<String>());
+            let block: Vec<u32> = to_w32_be(&msg).iter().map(|w| u32::from_be(*w)).collect();
+            // let state = apply_md4_constraints(&mut block, &MD4CollisionConstraints[0..16]);
+            // let msg = block
+            //     .iter()
+            //     .flat_map(|b| b.to_le_bytes())
+            //     .collect::<Vec<u8>>();
 
-            apply_md4_round2_contraints(&mut block, state, &MD4CollisionConstraints);
-            println!("New msg: {}", msg.encode_hex::<String>());
+            // apply_md4_round2_contraints(&mut block, state, &MD4CollisionConstraints);
+            // println!("New msg: {}", msg.encode_hex::<String>());
 
-            verify_md4_constraints(&block, &MD4CollisionConstraints[0..17])?;
+            verify_md4_constraints(&block, &MD4CollisionConstraints)?;
 
-            MD4::oneshot_digest(&msg);
+            // MD4::oneshot_digest(&msg);
             println!();
         }
 
-        let sample = hex::decode("a6af943ce36f0cf4adcb12bef7f0dc1f526dd914bd3da3cafde14467ab129e640b4c41819915cb43db752155ae4b895fc71b9b0d384d06ef3118bbc643ae6384")?;
-        let block: Vec<u32> = to_w32_be(&sample)
-            .iter()
-            .map(|w| u32::from_be(*w))
-            .collect();
-        verify_md4_constraints(&block, &MD4CollisionConstraints)?;
+        // let sample = hex::decode("a6af943ce36f0cf4adcb12bef7f0dc1f526dd914bd3da3cafde14467ab129e640b4c41819915cb43db752155ae4b895fc71b9b0d384d06ef3118bbc643ae6384")?;
+        // let block: Vec<u32> = to_w32_be(&sample)
+        //     .iter()
+        //     .map(|w| u32::from_be(*w))
+        //     .collect();
+        // verify_md4_constraints(&block, &MD4CollisionConstraints)?;
 
         Ok(())
     }
