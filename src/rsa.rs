@@ -224,7 +224,6 @@ where
                     break;
                 }
                 s += &one;
-                
             }
         } else if !M.len().is_one() {
             println!("Bleichenbacher step 2.b");

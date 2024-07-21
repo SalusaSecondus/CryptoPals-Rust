@@ -695,7 +695,7 @@ impl MD4Constraint {
             _ => 0,
         };
         let old_word = state[old_word_idx];
-        
+
         if self == &MD4Constraint::Equal(19) {
             println!(
                 "Foo: new_word = {}[{}] = {}, old_word = {}[{}] = {}",
@@ -859,7 +859,10 @@ fn apply_md4_constraints(blocks: &mut [u32], constraints: &[Vec<MD4Constraint>])
             let a_next = state[a_idx];
             let fixed_a1 = constraint.apply(a_next, state, word_idxs);
             if step == 5 {
-                println!("Candidate next: {} => {} by {:?}", a_next, fixed_a1, constraint);;
+                println!(
+                    "Candidate next: {} => {} by {:?}",
+                    a_next, fixed_a1, constraint
+                );
             }
             x = MD4::ff2word(
                 fixed_a1,
@@ -884,11 +887,7 @@ fn apply_md4_constraints(blocks: &mut [u32], constraints: &[Vec<MD4Constraint>])
 fn print_md4_state(step: usize, state: [u32; 4]) {
     println!(
         "{}:\ta = {:#04x}\tb = {:#04x}\tc = {:#04x}\td = {:#04x}",
-        step,
-        state[0],
-        state[1],
-        state[2],
-        state[3]
+        step, state[0], state[1], state[2], state[3]
     );
 }
 
@@ -1195,13 +1194,16 @@ pub fn rc4_single_byte_attack(n: [usize; 256], r: usize, p: &[[f64; 256]]) -> Re
     Ok(best)
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
     use crate::{
-        aes::AesKey, oracles::{Challenge49Oracle, Challenge51Oracle}, padding::Padding, rc4::Rc4Key, xor
+        aes::AesKey,
+        oracles::{Challenge49Oracle, Challenge51Oracle},
+        padding::Padding,
+        rc4::Rc4Key,
+        xor,
     };
     use anyhow::{Context, Result};
     use itertools::Itertools;
@@ -1812,10 +1814,10 @@ mod tests {
         }
         let expected = trials / 256;
         println!("Expected = {}, actual = {}", expected, zero_count);
-        assert!(zero_count as f32  >= (expected as f32 * 1.5));
+        assert!(zero_count as f32 >= (expected as f32 * 1.5));
 
         println!("Expected = {}, actual = {}", expected, length_bias_count);
-        assert!(length_bias_count as f32  >= (expected as f32 * 1.002));
+        assert!(length_bias_count as f32 >= (expected as f32 * 1.002));
         Ok(())
     }
 
@@ -1833,9 +1835,13 @@ mod tests {
         println!("Active count: {}", pool.active_count());
         for _ in 0..=pool_size {
             println!("Enqueed");
-            pool.execute_to(tx.clone(), Thunk::of(|| {
-                let zeros = [0u8; 32];
-                Rc4Key::random().crypt(&zeros) }));
+            pool.execute_to(
+                tx.clone(),
+                Thunk::of(|| {
+                    let zeros = [0u8; 32];
+                    Rc4Key::random().crypt(&zeros)
+                }),
+            );
         }
         println!("Active count: {}", pool.active_count());
 
@@ -1850,24 +1856,26 @@ mod tests {
             }
             i += 1;
 
-            pool.execute_to(tx.clone(), Thunk::of(|| {
-                let zeros = [0u8; 32];
-                Rc4Key::random().crypt(&zeros) }));
+            pool.execute_to(
+                tx.clone(),
+                Thunk::of(|| {
+                    let zeros = [0u8; 32];
+                    Rc4Key::random().crypt(&zeros)
+                }),
+            );
         }
         // for _i in 0..(trials / pool_size) {
-        //     for _ in 0..pool_size {            
+        //     for _ in 0..pool_size {
         //     pool.execute_to(tx.clone(), Thunk::of(|| {
         //         let zeros = [0u8; 32];
         //         Rc4Key::random().crypt(&zeros) }));
         //     }
-
 
         //     let mut key = Rc4Key::random();
         //     for r_count in counts.iter_mut() {
         //         r_count[key.next_byte() as usize] += 1f64;
         //     }
         // }
-
 
         for r_count in counts.iter_mut() {
             for elem in r_count.iter_mut() {

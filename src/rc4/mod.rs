@@ -9,7 +9,7 @@ pub mod distribution;
 pub struct Rc4Key {
     s: [u8; 256],
     i: usize,
-    j: usize
+    j: usize,
 }
 
 impl Rc4Key {
@@ -27,19 +27,17 @@ impl Rc4Key {
         for (idx, val) in s.iter_mut().enumerate() {
             *val = idx as u8;
         }
-        let mut j : usize = 0;
+        let mut j: usize = 0;
         for i in 0..256usize {
             j = (j + s[i] as usize + key[i % key.len()] as usize) % 256;
             (s[i], s[j]) = (s[j], s[i]);
         }
-        Ok(
-            Rc4Key{s, i: 0, j: 0}
-        )
+        Ok(Rc4Key { s, i: 0, j: 0 })
     }
 
     pub fn next_byte(&mut self) -> u8 {
         self.i += 1;
-        self.j = (self.j  + (self.s[self.i] as usize)) % 256;
+        self.j = (self.j + (self.s[self.i] as usize)) % 256;
         (self.s[self.i], self.s[self.j]) = (self.s[self.j], self.s[self.i]);
         let k_idx = self.s[self.i].wrapping_add(self.s[self.j]);
         self.s[k_idx as usize]

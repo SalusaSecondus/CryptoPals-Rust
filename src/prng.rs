@@ -24,8 +24,7 @@ pub struct MT19937 {
 impl MT19937 {
     pub fn new(seed: u32) -> MT19937 {
         let index = N;
-        let mut state = vec![];
-        state.resize(N, 0);
+        let mut state = vec![0; N];
         state[0] = seed;
 
         let mut prev_value = seed as u64;
@@ -52,7 +51,7 @@ impl MT19937 {
         let val = MT19937::undo_18_shift(val);
         let val = MT19937::undo_15_shift(val);
         let val = MT19937::undo_7_shift(val);
-        
+
         MT19937::undo_11_shift(val)
     }
     fn undo_18_shift(y: u32) -> u32 {

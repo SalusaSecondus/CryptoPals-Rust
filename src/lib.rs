@@ -8,7 +8,12 @@ use num_traits::{One, PrimInt, ToBytes, Zero};
 use rand::seq::IteratorRandom;
 use rand_core::OsRng;
 use std::{
-    collections::HashMap, fmt::Debug, fs::File, io::{BufRead, BufReader, Lines}, ops::{Deref}, usize, vec
+    collections::HashMap,
+    fmt::Debug,
+    fs::File,
+    io::{BufRead, BufReader, Lines},
+    ops::Deref,
+    usize, vec,
 };
 
 mod aes;
@@ -18,10 +23,10 @@ mod math;
 mod oracles;
 mod padding;
 mod prng;
+mod rc4;
 mod rsa;
 mod set7;
 mod srp;
-mod rc4;
 
 #[derive(Debug)]
 pub struct PublicKey<T>(T);
@@ -328,7 +333,7 @@ where
             Self::one()
         }
     }
-    
+
     fn set_bit(&self, idx: usize, val: Self) -> Self {
         let mut mask = W::one() << idx;
         let candidate = if val.is_one() {
@@ -340,7 +345,16 @@ where
             panic!("Invalid value {:?}", val);
         };
         if candidate.bit(idx) != val {
-            println!("{:?}[{}] = {:?}\n{:?}[{}] = {:?}\nWanted = {:?}", self, idx, self.bit(idx), candidate, idx, candidate.bit(idx), val);
+            println!(
+                "{:?}[{}] = {:?}\n{:?}[{}] = {:?}\nWanted = {:?}",
+                self,
+                idx,
+                self.bit(idx),
+                candidate,
+                idx,
+                candidate.bit(idx),
+                val
+            );
             println!("Mask = {:?}", mask);
         }
         assert_eq!(candidate.bit(idx), val);
@@ -358,7 +372,6 @@ where
     fn to_le_hex(&self) -> String {
         self.to_le_bytes().encode_hex::<String>()
     }
-    
 }
 
 #[cfg(test)]
