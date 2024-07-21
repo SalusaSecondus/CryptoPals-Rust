@@ -1,5 +1,9 @@
 use anyhow::{ensure, Result};
 use itertools::Itertools;
+use rand::RngCore;
+use rand_core::OsRng;
+
+pub mod distribution;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Rc4Key {
@@ -9,6 +13,13 @@ pub struct Rc4Key {
 }
 
 impl Rc4Key {
+    pub fn random() -> Self {
+        let mut rng = OsRng;
+        let mut key = [0u8; 16];
+        rng.fill_bytes(&mut key);
+        Self::new(&key).unwrap()
+    }
+
     pub fn new(key: &[u8]) -> Result<Rc4Key> {
         ensure!(key.len() >= 1);
         ensure!(key.len() <= 256);

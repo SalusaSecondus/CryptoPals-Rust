@@ -21,10 +21,7 @@ use time::{Duration, SystemTime, UNIX_EPOCH};
 use tiny_http::{Request, Response, Server};
 
 use crate::{
-    aes::AesKey,
-    digest::{Hmac, Sha1},
-    prng::MT19937,
-    rsa::{gen_rsa, rsa_private_raw, rsa_public_raw, RsaKey, RsaKeyImpl, RsaPrivateKey},
+    aes::AesKey, digest::{Hmac, Sha1}, prng::MT19937, rc4::Rc4Key, rsa::{gen_rsa, rsa_private_raw, rsa_public_raw, RsaKey, RsaKeyImpl, RsaPrivateKey}
 };
 use crate::{
     digest::{Digest, PrefixMac},
@@ -875,6 +872,22 @@ impl Challenge51Oracle {
     pub fn check(&self, guess: &str) -> Result<()> {
         ensure!(self.session_id == guess);
         Ok(())
+    }
+}
+
+pub struct Challenge56Oracle {
+    secret: Vec<u8>
+}
+
+impl Challenge56Oracle {
+    pub fn new() -> Self {
+        let secret = base64::decode("QkUgU1VSRSBUTyBEUklOSyBZT1VSIE9WQUxUSU5F").unwrap();
+        Self{secret}
+    }
+
+    pub fn encrypt(&self, request: &[u8]) -> Vec<u8> {
+        let mut key = Rc4Key::random();
+        request.iter().chain(self.secret.iter()).map(|b| b ^ key.next_byte()).collect_vec()
     }
 }
 

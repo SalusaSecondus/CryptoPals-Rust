@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, os::macos::raw::stat, sync::mpsc::channel, vec};
+use std::{collections::HashMap, fmt::Display, sync::mpsc::channel, vec};
 
 use hex::ToHex;
 use lazy_static::lazy_static;
@@ -10,9 +10,9 @@ use crate::{
     padding::Padding,
     BitArray,
 };
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use itertools::Itertools;
-use rand::{seq::index, Rng, RngCore};
+use rand::RngCore;
 use rand_core::OsRng;
 use workerpool::{
     thunk::{Thunk, ThunkWorker},
@@ -1169,15 +1169,39 @@ fn create_md4_collision_inner(msg2_limit: usize) -> Result<(Vec<u8>, Vec<u8>, us
     }
 }
 
+// n = counts, r = position, p = distribution
+pub fn rc4_single_byte_attack(n: [usize; 256], r: usize, p: &[[f64; 256]]) -> Result<u8> {
+    ensure!(r >= 0);
+    ensure!(r < p.len());
+    let mut l = [0f64; 256];
+
+    for u in 0..=255u8 {
+        let mut n_u = [0usize; 256];
+        for k in 0..=255u8 {
+            n_u[k as usize] = n[(u ^ k) as usize];
+        }
+        for k in 0..=255u8 {
+            l[u as usize] += (n_u[k as usize] as f64) * p[r][k as usize].log2();
+        }
+    }
+    let mut best_val = f64::MIN;
+    let mut best = 0u8;
+    for u in 0..=255 {
+        if l[u] > best_val {
+            best_val = l[u];
+            best = u as u8;
+        }
+    }
+    Ok(best)
+}
+
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
     use crate::{
-        aes::AesKey,
-        oracles::{Challenge49Oracle, Challenge51Oracle},
-        padding::Padding,
-        xor,
+        aes::AesKey, oracles::{Challenge49Oracle, Challenge51Oracle}, padding::Padding, rc4::Rc4Key, xor
     };
     use anyhow::{Context, Result};
     use itertools::Itertools;
@@ -1762,6 +1786,111 @@ mod tests {
         let hash2: String = MD4::oneshot_digest(&collision.1).encode_hex();
         assert_eq!(hash1, hash2);
 
+        Ok(())
+    }
+
+    #[test]
+    // #[ignore = "slow"]
+    fn challenge56_detect_bias() -> Result<()> {
+        // Second byte should be zero 1/128 of the time
+        let trials = 4096000;
+        let mut zero_count = 0;
+        let zeros = [0u8; 32];
+
+        let mut length_bias_count = 0;
+        for _ in 0..trials {
+            let mut key = Rc4Key::random();
+            let ciphertext = key.crypt(&zeros);
+            // key.next_byte();
+            if ciphertext[1] == 0 {
+                zero_count += 1;
+            }
+
+            if ciphertext[31] == 224 {
+                length_bias_count += 1;
+            }
+        }
+        let expected = trials / 256;
+        println!("Expected = {}, actual = {}", expected, zero_count);
+        assert!(zero_count as f32  >= (expected as f32 * 1.5));
+
+        println!("Expected = {}, actual = {}", expected, length_bias_count);
+        assert!(length_bias_count as f32  >= (expected as f32 * 1.002));
+        Ok(())
+    }
+
+    // #[test]
+    fn challenge56_generate_table() -> Result<()> {
+        let pool_size = 12;
+        let trials = 1usize << 32;
+        let f_trials = trials as f64;
+
+        let pool: Pool<ThunkWorker<Vec<u8>>> = Pool::new(pool_size);
+        let (tx, rx) = channel();
+        let mut counts = [[0f64; 256]; 32];
+
+        let mut i = 0;
+        println!("Active count: {}", pool.active_count());
+        for _ in 0..=pool_size {
+            println!("Enqueed");
+            pool.execute_to(tx.clone(), Thunk::of(|| {
+                let zeros = [0u8; 32];
+                Rc4Key::random().crypt(&zeros) }));
+        }
+        println!("Active count: {}", pool.active_count());
+
+        while i < trials {
+            // println!("Fod");
+            if i % (1025 * 1025) == 0 {
+                println!("Trial {} ({})", i, (i as f64 / f_trials));
+            }
+            let tmp = rx.recv()?;
+            for (idx, val) in tmp.iter().enumerate() {
+                counts[idx][*val as usize] += 1f64;
+            }
+            i += 1;
+
+            pool.execute_to(tx.clone(), Thunk::of(|| {
+                let zeros = [0u8; 32];
+                Rc4Key::random().crypt(&zeros) }));
+        }
+        // for _i in 0..(trials / pool_size) {
+        //     for _ in 0..pool_size {            
+        //     pool.execute_to(tx.clone(), Thunk::of(|| {
+        //         let zeros = [0u8; 32];
+        //         Rc4Key::random().crypt(&zeros) }));
+        //     }
+
+
+        //     let mut key = Rc4Key::random();
+        //     for r_count in counts.iter_mut() {
+        //         r_count[key.next_byte() as usize] += 1f64;
+        //     }
+        // }
+
+
+        for r_count in counts.iter_mut() {
+            for elem in r_count.iter_mut() {
+                *elem /= f_trials;
+            }
+        }
+
+        println!("{:?}", counts);
+        Ok(())
+    }
+
+    #[test]
+    fn challenge56_recovery_smoke() -> Result<()> {
+        let target = [0u8, 7u8];
+        let mut counts = [0usize; 256];
+        for _i in 0..10240 {
+            let mut key = Rc4Key::random();
+            let ct = key.crypt(&target);
+            counts[ct[1] as usize] += 1;
+        }
+        println!("Counts = {:?}", counts);
+        let recovered = rc4_single_byte_attack(counts, 1, &crate::rc4::distribution::DISTRIBUTION)?;
+        assert_eq!(recovered, target[1]);
         Ok(())
     }
 }
