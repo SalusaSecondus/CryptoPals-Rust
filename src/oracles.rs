@@ -879,9 +879,13 @@ impl Challenge51Oracle {
     }
 }
 
+#[derive(Clone)]
 pub struct Challenge56Oracle {
     secret: Vec<u8>,
 }
+
+unsafe impl Send for Challenge56Oracle {}
+unsafe impl Sync for Challenge56Oracle {}
 
 impl Challenge56Oracle {
     pub fn new() -> Self {
@@ -896,6 +900,10 @@ impl Challenge56Oracle {
             .chain(self.secret.iter())
             .map(|b| b ^ key.next_byte())
             .collect_vec()
+    }
+
+    pub fn check(&self, guess: &[u8]) -> bool {
+        self.secret == guess
     }
 }
 
