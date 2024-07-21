@@ -1109,7 +1109,7 @@ fn create_md4_collision_candidate() -> Result<Vec<u8>> {
         .iter()
         .flat_map(|b| b.to_le_bytes())
         .collect::<Vec<u8>>();
-    return Ok(msg1);
+    Ok(msg1)
     // }
     // println!("Trying again...");
     // }

@@ -4,11 +4,11 @@ use anyhow::{Context, Result};
 use const_format::concatcp;
 use hex::ToHex;
 use lazy_static::lazy_static;
-use num_traits::{zero, One, PrimInt, ToBytes, Zero};
+use num_traits::{One, PrimInt, ToBytes, Zero};
 use rand::seq::IteratorRandom;
 use rand_core::OsRng;
 use std::{
-    collections::HashMap, fmt::Debug, fs::File, io::{BufRead, BufReader, Lines}, ops::{BitAnd, BitOr, Deref, Not, Shl}, usize, vec
+    collections::HashMap, fmt::Debug, fs::File, io::{BufRead, BufReader, Lines}, ops::{Deref}, usize, vec
 };
 
 mod aes;
