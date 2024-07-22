@@ -181,6 +181,7 @@ impl Interval {
 mod tests {
     use super::*;
     use anyhow::Result;
+    use num_traits::Zero;
     use salusa_math::{mod_exp, rand_bigint};
 
     #[test]

@@ -909,6 +909,7 @@ impl Challenge56Oracle {
 }
 
 pub struct Challenge57Oracle {
+    pub key: BigUint,
     x: BigUint,
     p: BigUint,
 }
@@ -918,7 +919,9 @@ impl Challenge57Oracle {
         let q = BigUint::from_str_radix("236234353446506858198510045061214171961", 10).unwrap();
         let x = rand_bigint(&q);
         let p = BigUint::from_str_radix("7199773997391911030609999317773941274322764333428698921736339643928346453700085358802973900485592910475480089726140708102474957429903531369589969318716771", 10).unwrap();
-        Self { x, p }
+        let g = BigUint::from_str_radix("4565356397095740655436854503483826832136106141639563487732438195343690437606117828318042418238184896212352329118608100083187535033402010599512641674644143", 10).unwrap();
+        let key = g.modpow(&x, &p);
+        Self { x, p , key}
     }
 
     pub fn oracle(&self, h: &BigUint) -> Vec<u8> {
@@ -937,6 +940,10 @@ impl Challenge57Oracle {
         let mut mac = Hmac::<Sha256>::init_new(&k);
         mac.update(b"crazy flamboyant for the rap enjoyment");
         mac.digest()
+    }
+
+    pub fn check(&self, guess: &BigUint) -> bool {
+        self.x == *guess
     }
 }
 
