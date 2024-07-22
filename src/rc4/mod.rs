@@ -4,6 +4,7 @@ use rand::RngCore;
 use rand_core::OsRng;
 
 pub mod distribution;
+pub use distribution::RC4_DISTRIBUTION;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Rc4Key {

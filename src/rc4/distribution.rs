@@ -1,4 +1,4 @@
-pub const DISTRIBUTION: [[f64; 256]; 32] = [
+pub const RC4_DISTRIBUTION: [[f64; 256]; 32] = [
     [
         0.003894119057804346,
         0.0039023240096867085,
