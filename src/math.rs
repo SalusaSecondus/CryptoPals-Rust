@@ -1,9 +1,8 @@
 use std::fmt::{Debug, Display};
 
-use anyhow::{bail, ensure, Context, Result};
 use lazy_static::lazy_static;
-use num_bigint::{BigInt, BigUint, RandBigInt, Sign, ToBigInt};
-use num_traits::{identities::Zero, One};
+use num_bigint::BigUint;
+use num_traits::One;
 use rand::RngCore;
 use rand_core::OsRng;
 use salusa_math::{mod_exp, rand_bigint};
@@ -181,10 +180,8 @@ impl Interval {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use salusa_math::{mod_exp, rand_bigint, rand_prime};
     use anyhow::Result;
-
-
+    use salusa_math::{mod_exp, rand_bigint};
 
     #[test]
     #[allow(non_snake_case)]

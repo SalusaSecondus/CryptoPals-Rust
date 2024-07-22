@@ -910,7 +910,7 @@ impl Challenge56Oracle {
 
 pub struct Challenge57Oracle {
     x: BigUint,
-    p: BigUint
+    p: BigUint,
 }
 
 impl Challenge57Oracle {
@@ -918,11 +918,11 @@ impl Challenge57Oracle {
         let q = BigUint::from_str_radix("236234353446506858198510045061214171961", 10).unwrap();
         let x = rand_bigint(&q);
         let p = BigUint::from_str_radix("7199773997391911030609999317773941274322764333428698921736339643928346453700085358802973900485592910475480089726140708102474957429903531369589969318716771", 10).unwrap();
-        Self {x, p}
+        Self { x, p }
     }
 
     pub fn oracle(&self, h: &BigUint) -> Vec<u8> {
-        let key = self.agree(&h, &self.x);
+        let key = self.agree(h, &self.x);
 
         self.mac_with_key(&key)
     }
@@ -939,7 +939,6 @@ impl Challenge57Oracle {
         mac.digest()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -3,11 +3,8 @@ use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 
+use crate::{digest::DigestOneShot, KeyPair, PrivateKey, PublicKey};
 use salusa_math::{inv_mod, mod_exp, rand_bigint};
-use crate::{
-    digest::DigestOneShot,
-    KeyPair, PrivateKey, PublicKey,
-};
 
 #[derive(Debug, Clone)]
 pub struct DsaParams {
