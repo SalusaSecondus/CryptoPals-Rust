@@ -3,9 +3,9 @@ use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
 
+use salusa_math::{inv_mod, mod_exp, rand_bigint};
 use crate::{
     digest::DigestOneShot,
-    math::{inv_mod, mod_exp, rand_bigint},
     KeyPair, PrivateKey, PublicKey,
 };
 

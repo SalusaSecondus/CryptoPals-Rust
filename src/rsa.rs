@@ -3,11 +3,12 @@ use asn1::ObjectIdentifier;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::One;
+use salusa_math::{inv_mod, mod_exp, rand_prime};
 
 use crate::padding::Padding;
 use crate::{
     digest::{Digest, DigestOneShot},
-    math::{inv_mod, mod_exp, rand_prime, Interval},
+    math::Interval,
 };
 
 lazy_static! {
@@ -332,6 +333,7 @@ mod tests {
     use num_traits::Zero;
     use rand::RngCore;
     use rand_core::OsRng;
+    use salusa_math::rand_bigint;
 
     use super::*;
 
@@ -351,7 +353,7 @@ mod tests {
                 let tmp: &BigUint = &E3;
                 assert_eq!(tmp, pub_key.pub_exp());
 
-                let plaintext = crate::math::rand_bigint(pub_key.modulus());
+                let plaintext = rand_bigint(pub_key.modulus());
                 let ciphertext = rsa_public_raw(&pub_key, &plaintext);
                 let decrypted = rsa_private_raw(&priv_key, &ciphertext);
 

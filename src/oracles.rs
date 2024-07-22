@@ -15,6 +15,7 @@ use num_traits::Num;
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
+use salusa_math::rand_bigint;
 use std::{thread, time};
 use thread::sleep;
 use time::{Duration, SystemTime, UNIX_EPOCH};
@@ -22,7 +23,7 @@ use tiny_http::{Request, Response, Server};
 
 use crate::{
     aes::AesKey,
-    digest::{Hmac, Sha1},
+    digest::{Hmac, Sha1, Sha256},
     prng::MT19937,
     rc4::Rc4Key,
     rsa::{gen_rsa, rsa_private_raw, rsa_public_raw, RsaKey, RsaKeyImpl, RsaPrivateKey},
@@ -906,6 +907,39 @@ impl Challenge56Oracle {
         self.secret == guess
     }
 }
+
+pub struct Challenge57Oracle {
+    x: BigUint,
+    p: BigUint
+}
+
+impl Challenge57Oracle {
+    pub fn new() -> Self {
+        let q = BigUint::from_str_radix("236234353446506858198510045061214171961", 10).unwrap();
+        let x = rand_bigint(&q);
+        let p = BigUint::from_str_radix("7199773997391911030609999317773941274322764333428698921736339643928346453700085358802973900485592910475480089726140708102474957429903531369589969318716771", 10).unwrap();
+        Self {x, p}
+    }
+
+    pub fn oracle(&self, h: &BigUint) -> Vec<u8> {
+        let key = self.agree(&h, &self.x);
+
+        self.mac_with_key(&key)
+    }
+
+    pub fn agree(&self, pub_key: &BigUint, priv_key: &BigUint) -> BigUint {
+        pub_key.modpow(priv_key, &self.p)
+    }
+
+    pub fn mac_with_key(&self, key: &BigUint) -> Vec<u8> {
+        let k = key.to_bytes_be();
+
+        let mut mac = Hmac::<Sha256>::init_new(&k);
+        mac.update(b"crazy flamboyant for the rap enjoyment");
+        mac.digest()
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
