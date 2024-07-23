@@ -35,7 +35,7 @@ pub fn pollard_discrete_log<F>(y: &BigUint, a: &BigUint, b: &BigUint, g: &BigUin
     where F: Fn(&BigUint) -> BigUint {
     
     let mut xt = BigUint::zero();
-    let mut yt = b.clone();
+    let mut yt = g.modpow(b, m);
     println!("Generating first table to {}", n);
     let n_f = n as f64;
     for _i in 1..=n  {
@@ -51,23 +51,23 @@ pub fn pollard_discrete_log<F>(y: &BigUint, a: &BigUint, b: &BigUint, g: &BigUin
     }
 
     let xt = xt;
-    let yt = y;
+    let yt = yt;
 
     let mut xw = BigUint::zero();
-    let mut yw = BigUint::zero();
+    let mut yw = y.clone();
     let limit = (b - a) + &xt;
 
     println!("Doing search");
 
     while xw < limit {
-        println!("{} <? {}", xw, limit);
         let fyw = f(&yw);
+        // println!("{} <? {}, {}, {}", xw, limit, yw, fyw);
         xw += &fyw;
         yw *= g.modpow(&fyw, m);
         xw %= m;
         yw %= m;
 
-        if yw == *yt {
+        if yw == yt {
             return Ok(b + xt - xw);
         }
     }
@@ -138,8 +138,9 @@ mod tests {
         let _q = BigUint::from_str_radix("335062023296420808191071248367701059461", 10).unwrap();
         let _j = BigUint::from_str_radix("34233586850807404623475048381328686211071196701374230492615844865929237417097514638999377942356150481334217896204702", 10).unwrap();
         let g = BigUint::from_str_radix("622952335333961296978159266084741085889881358738459939978290179936063635566740258555167783009058567397963466103140082647486611657350811560630587013183357", 10).unwrap();
-        let k = 1u64 << 14;
-        let n : u64 = (0..k).map(|v| 2u64.pow(v.try_into().unwrap())).sum::<u64>() / k;
+        let k = 20;
+        let n : u64 = 4 * (0..k).map(|v| 2u64.pow(v.try_into().unwrap())).sum::<u64>() / k;
+        // panic!("{}", n);
         // let n = &k << 2;
         let two = BigUint::from_u32(2).unwrap();
         let f = |y: &BigUint| {
@@ -151,7 +152,13 @@ mod tests {
         let b = BigUint::one() << 20;
         let y = BigUint::from_str_radix("7760073848032689505395005705677365876654629189298052775754597607446617558600394076764814236081991643094239886772481052254010323780165093955236429914607119", 10).unwrap();
         let idx = pollard_discrete_log(&y, &BigUint::zero(), &b, &g, &p, n as usize, f)?;
-        println!("idx = {}", idx);
+        println!("g^{} = {} =? {}", idx, g.modpow(&idx, &p), y);
+        assert_eq!(g.modpow(&idx, &p), y);
+
+        let b = BigUint::one() << 40;
+        let y = BigUint::from_str_radix("9388897478013399550694114614498790691034187453089355259602614074132918843899833277397448144245883225611726912025846772975325932794909655215329941809013733", 10).unwrap();
+        let idx = pollard_discrete_log(&y, &BigUint::zero(), &b, &g, &p, n as usize, f)?;
+        println!("g^{} = {} =? {}", idx, g.modpow(&idx, &p), y);
         assert_eq!(g.modpow(&idx, &p), y);
         Ok(())
     }
