@@ -1,6 +1,7 @@
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
-use num_traits::FromPrimitive as _;
+use num_traits::{FromPrimitive as _, One as _, Zero};
+use anyhow::{bail, Result};
 
 lazy_static! {
     static ref CHALLENGE_57_J_FACTORS: Vec<(BigUint, BigUint)> = [
@@ -30,16 +31,62 @@ lazy_static! {
     .collect();
 }
 
+pub fn pollard_discrete_log<F>(y: &BigUint, a: &BigUint, b: &BigUint, g: &BigUint, m: &BigUint, n: usize, f: F) -> Result<BigUint>
+    where F: Fn(&BigUint) -> BigUint {
+    
+    let mut xt = BigUint::zero();
+    let mut yt = b.clone();
+    println!("Generating first table to {}", n);
+    let n_f = n as f64;
+    for _i in 1..=n  {
+        // println!("i = {}; yt = {}", _i, yt);
+        if _i % 1000000 == 0 {
+            println!("{}/{} ({})", _i, n, _i as f64 / n_f);
+        }
+        let fyt = f(&yt);
+        xt += &fyt;
+        yt *= g.modpow(&fyt, m);
+        xt %= m;
+        yt %= m;
+    }
+
+    let xt = xt;
+    let yt = y;
+
+    let mut xw = BigUint::zero();
+    let mut yw = BigUint::zero();
+    let limit = (b - a) + &xt;
+
+    println!("Doing search");
+
+    while xw < limit {
+        println!("{} <? {}", xw, limit);
+        let fyw = f(&yw);
+        xw += &fyw;
+        yw *= g.modpow(&fyw, m);
+        xw %= m;
+        yw %= m;
+
+        if yw == *yt {
+            return Ok(b + xt - xw);
+        }
+    }
+
+    bail!("Too many iterations");
+}
+
 #[cfg(test)]
 mod tests {
+    use std::convert::TryInto as _;
+
     use anyhow::Result;
-    use num_bigint::{BigInt, BigUint};
-    use num_traits::{Num, One, Zero};
-    use salusa_math::{crt, gcd, rand_bigint};
+    use num_bigint::BigUint;
+    use num_traits::{FromPrimitive, Num, One, Zero};
+    use salusa_math::{crt, rand_bigint};
 
     use crate::oracles::Challenge57Oracle;
 
-    use super::CHALLENGE_57_J_FACTORS;
+    use super::{pollard_discrete_log, CHALLENGE_57_J_FACTORS};
 
     #[test]
     pub fn challenge57() -> Result<()> {
@@ -82,6 +129,30 @@ mod tests {
         let result = crt(&crt_factors)?;
         println!("Found {}", result);
         assert!(oracle.check(&result));
+        Ok(())
+    }
+
+    #[test]
+    fn challenge58() -> Result<()> {
+        let p = BigUint::from_str_radix("11470374874925275658116663507232161402086650258453896274534991676898999262641581519101074740642369848233294239851519212341844337347119899874391456329785623", 10).unwrap();
+        let _q = BigUint::from_str_radix("335062023296420808191071248367701059461", 10).unwrap();
+        let _j = BigUint::from_str_radix("34233586850807404623475048381328686211071196701374230492615844865929237417097514638999377942356150481334217896204702", 10).unwrap();
+        let g = BigUint::from_str_radix("622952335333961296978159266084741085889881358738459939978290179936063635566740258555167783009058567397963466103140082647486611657350811560630587013183357", 10).unwrap();
+        let k = 1u64 << 14;
+        let n : u64 = (0..k).map(|v| 2u64.pow(v.try_into().unwrap())).sum::<u64>() / k;
+        // let n = &k << 2;
+        let two = BigUint::from_u32(2).unwrap();
+        let f = |y: &BigUint| {
+            let exp = y % k;
+            two.modpow(&exp, &p)
+            // two.pow((y % &k.try_into().unwrap())
+        };
+
+        let b = BigUint::one() << 20;
+        let y = BigUint::from_str_radix("7760073848032689505395005705677365876654629189298052775754597607446617558600394076764814236081991643094239886772481052254010323780165093955236429914607119", 10).unwrap();
+        let idx = pollard_discrete_log(&y, &BigUint::zero(), &b, &g, &p, n as usize, f)?;
+        println!("idx = {}", idx);
+        assert_eq!(g.modpow(&idx, &p), y);
         Ok(())
     }
 }
