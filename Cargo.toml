@@ -16,7 +16,7 @@ tiny_http = "0.8.0"
 num-bigint = { version = "0.4", features = ["rand"] }
 num-traits = "0.2.14"
 asn1 = "0.3"
-salusa_math = {path = "../salusa_math" }
+salusa_math = {path = "../salusa_math/salusa_math" }
 const_format = "0.2.32"
 itertools = "0.13"
 flate2 = "1.0"

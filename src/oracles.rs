@@ -1,21 +1,16 @@
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    io::Write,
-    marker::PhantomData,
-    net::SocketAddr,
-    sync::{atomic::AtomicBool, Arc},
+    cell::RefCell, collections::HashMap, fmt::Debug, io::Write, marker::PhantomData, net::SocketAddr, sync::{atomic::AtomicBool, Arc}
 };
 
 use anyhow::{bail, ensure, Context, Result};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use num_bigint::BigUint;
-use num_traits::Num;
+use num_bigint::{BigInt, BigUint};
+use num_traits::{Num, One};
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
-use salusa_math::rand_bigint;
+use salusa_math::{group::{Group, GroupElement, ZMultElement, ZMultGroup}, rand_bigint};
 use std::{thread, time};
 use thread::sleep;
 use time::{Duration, SystemTime, UNIX_EPOCH};
@@ -908,41 +903,53 @@ impl Challenge56Oracle {
     }
 }
 
-pub struct Challenge57Oracle {
-    pub key: BigUint,
-    x: BigUint,
-    p: BigUint,
+pub struct Challenge57_58Oracle<GE, T>
+where GE: GroupElement<T>,
+      T: Clone + Debug + Eq {
+    pub key: GE,
+    x: BigInt,
+    _pt: PhantomData<T>
 }
 
-impl Challenge57Oracle {
-    pub fn new() -> Self {
+impl Challenge57_58Oracle<ZMultElement, BigInt> {
+    pub fn new57() -> Self {
+        let p = BigInt::from_str_radix("7199773997391911030609999317773941274322764333428698921736339643928346453700085358802973900485592910475480089726140708102474957429903531369589969318716771", 10).unwrap();
+        // let p_minus = &p - BigInt::one();
+        let group = ZMultGroup::modulus(&p);
         let q = BigUint::from_str_radix("236234353446506858198510045061214171961", 10).unwrap();
-        let x = rand_bigint(&q);
-        let p = BigUint::from_str_radix("7199773997391911030609999317773941274322764333428698921736339643928346453700085358802973900485592910475480089726140708102474957429903531369589969318716771", 10).unwrap();
-        let g = BigUint::from_str_radix("4565356397095740655436854503483826832136106141639563487732438195343690437606117828318042418238184896212352329118608100083187535033402010599512641674644143", 10).unwrap();
-        let key = g.modpow(&x, &p);
-        Self { x, p , key}
+        let x = rand_bigint(&q).into();
+        let g = BigInt::from_str_radix("4565356397095740655436854503483826832136106141639563487732438195343690437606117828318042418238184896212352329118608100083187535033402010599512641674644143", 10).unwrap();
+        let g = group.wrap(g).unwrap();
+        let key = g.scalar_mult(&x);
+        Self { key, x, _pt: PhantomData::default()}
     }
+}
 
-    pub fn oracle(&self, h: &BigUint) -> Vec<u8> {
+impl<GE, T> Challenge57_58Oracle<GE, T>
+where GE: GroupElement<T>,
+      T: Clone + Debug + Eq {
+
+
+    pub fn oracle(&self, h: &GE) -> Vec<u8> {
         let key = self.agree(h, &self.x);
+        // println!("Oracle: {:?}", key);
 
         self.mac_with_key(&key)
     }
 
-    pub fn agree(&self, pub_key: &BigUint, priv_key: &BigUint) -> BigUint {
-        pub_key.modpow(priv_key, &self.p)
+    pub fn agree(&self, pub_key: &GE, priv_key: &BigInt) -> GE {
+        pub_key.scalar_mult(priv_key)
     }
 
-    pub fn mac_with_key(&self, key: &BigUint) -> Vec<u8> {
-        let k = key.to_bytes_be();
+    pub fn mac_with_key(&self, key: &GE) -> Vec<u8> {
+        let k = key.to_bytes();
 
         let mut mac = Hmac::<Sha256>::init_new(&k);
         mac.update(b"crazy flamboyant for the rap enjoyment");
         mac.digest()
     }
 
-    pub fn check(&self, guess: &BigUint) -> bool {
+    pub fn check(&self, guess: &BigInt) -> bool {
         self.x == *guess
     }
 }

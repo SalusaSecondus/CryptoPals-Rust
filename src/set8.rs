@@ -1,10 +1,10 @@
 use lazy_static::lazy_static;
-use num_bigint::BigUint;
+use num_bigint::{BigInt, BigUint};
 use num_traits::{FromPrimitive as _, One as _, Zero};
 use anyhow::{bail, Result};
 
 lazy_static! {
-    static ref CHALLENGE_57_J_FACTORS: Vec<(BigUint, BigUint)> = [
+    static ref CHALLENGE_57_J_FACTORS: Vec<(BigInt, BigInt)> = [
         (2u128, 1u128),
         (3, 2),
         (5, 1),
@@ -25,8 +25,8 @@ lazy_static! {
     ]
     .iter()
     .map(|(a, b)| (
-        BigUint::from_u128(*a).unwrap(),
-        BigUint::from_u128(*b).unwrap()
+        BigInt::from_u128(*a).unwrap(),
+        BigInt::from_u128(*b).unwrap()
     ))
     .collect();
 }
@@ -36,55 +36,61 @@ mod tests {
     use std::convert::TryInto as _;
 
     use anyhow::Result;
-    use num_bigint::{BigInt, BigUint};
+    use num_bigint::{BigInt, BigUint, ToBigInt};
     use num_traits::{FromPrimitive, Num, One, Zero};
     use salusa_math::{crt, group::{pollard_kangaroo, Group as _, GroupElement as _, ZMultElement, ZMultGroup}, rand_bigint};
 
-    use crate::oracles::Challenge57Oracle;
+    use crate::oracles::Challenge57_58Oracle;
 
     use super::CHALLENGE_57_J_FACTORS;
 
     #[test]
     pub fn challenge57() -> Result<()> {
-        let oracle = Challenge57Oracle::new();
-        let p = BigUint::from_str_radix("7199773997391911030609999317773941274322764333428698921736339643928346453700085358802973900485592910475480089726140708102474957429903531369589969318716771", 10)?;
-        let p_minus = &p - BigUint::one();
+        let oracle = Challenge57_58Oracle::new57();
+        let p = BigInt::from_str_radix("7199773997391911030609999317773941274322764333428698921736339643928346453700085358802973900485592910475480089726140708102474957429903531369589969318716771", 10)?;
+        let p_minus = &p - BigInt::one();
         let _g = BigUint::from_str_radix("4565356397095740655436854503483826832136106141639563487732438195343690437606117828318042418238184896212352329118608100083187535033402010599512641674644143", 10)?;
-        let q = BigUint::from_str_radix("236234353446506858198510045061214171961", 10)?;
+        let q = BigInt::from_str_radix("236234353446506858198510045061214171961", 10)?;
         let _j = BigUint::from_str_radix("30477252323177606811760882179058908038824640750610513771646768011063128035873508507547741559514324673960576895059570", 10)?;
         
-        let mut big_mod = BigUint::one();
+        let mut big_mod = BigInt::one();
         let mut crt_factors  = vec![];
         let mut idx = 3;
+        let group = ZMultGroup::modulus(&p);
+        let p = p.to_biguint().unwrap();
         while big_mod < q {
             println!("{:?}", crt_factors);
             let r = &CHALLENGE_57_J_FACTORS[idx].0;
-            let exp = &p_minus / r;
+            let exp = (&p_minus / r).to_biguint().unwrap();
             // Find h
             let mut h = BigUint::one();
             while h.is_one() || h.is_zero() {
                 h = rand_bigint(&p).modpow(&exp, &p);
                 println!("{} {}", r, h);
             }
+            let h = group.wrap(h.into())?;
             let expected_mac = oracle.oracle(&h);
 
-            let mut x = BigUint::zero();
+            let mut x = BigInt::zero();
             loop {
+                // println!("Trying {}", x);
                 let key = oracle.agree(&h, &x);
+                // println!("Guess: {:?}", key);
                 let actual_mac = oracle.mac_with_key(&key);
                 if actual_mac == expected_mac {
-                    crt_factors.push((x, r.clone()));
+                    crt_factors.push((x.to_biguint().unwrap(), r.to_biguint().unwrap()));
                     big_mod *= r;
                     idx += 1;
                     break;
                 }
-                x += BigUint::one();
+                assert!(&x < r);
+                x += BigInt::one();
             }
         }
 
         let result = crt(&crt_factors)?;
         println!("Found {}", result);
-        assert!(oracle.check(&result));
+        assert!(oracle.check(&result.into()));
         Ok(())
     }
 
@@ -127,4 +133,6 @@ mod tests {
         assert_eq!(g.scalar_mult(&idx), y);
         Ok(())
     }
+
+
 }
