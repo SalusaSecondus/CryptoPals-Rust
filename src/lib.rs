@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use const_format::concatcp;
 use hex::ToHex;
 use lazy_static::lazy_static;
-use num_traits::{One, PrimInt, ToBytes, Zero};
+use num_traits::{PrimInt, ToBytes};
 use rand::seq::IteratorRandom;
 use rand_core::OsRng;
 use std::{

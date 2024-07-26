@@ -4,6 +4,7 @@ use rand::RngCore;
 use rand_core::OsRng;
 
 pub mod distribution;
+#[allow(unused_imports)]
 pub use distribution::RC4_DISTRIBUTION;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

@@ -665,13 +665,13 @@ fn massage_md4_block(block: &mut [u8]) {
     let b0 = md4.h[1];
     let c0 = md4.h[2];
     let d0 = md4.h[3];
-    let mut X: Vec<u32> = to_w32_be(block).iter().map(|w| u32::from_be(*w)).collect();
+    let mut x: Vec<u32> = to_w32_be(block).iter().map(|w| u32::from_be(*w)).collect();
     // First condition
     {
-        let mut a1 = MD4::ff(a0, b0, c0, d0, 0, 3, &X);
+        let mut a1 = MD4::ff(a0, b0, c0, d0, 0, 3, &x);
         // Fix the bad bit
         a1 ^= (a1.bit(6) ^ b0.bit(6)) << 6;
-        X[0] = a1
+        x[0] = a1
             .rotate_right(3)
             .wrapping_sub(a0)
             .wrapping_sub(MD4::f(b0, c0, d0));
@@ -1059,7 +1059,7 @@ fn verify_md4_constraints(blocks: &[u32], constraints: &[Vec<MD4Constraint>]) ->
     let ops = [MD4::ff1, MD4::gg1, MD4::hh1];
     println!();
     for (step, step_constraints) in constraints.iter().enumerate() {
-        let round = step / 16;
+        let _round = step / 16;
         let op = ops[step / 16];
         let mut offset: usize = step % 4;
         if offset > 0 {
@@ -1095,7 +1095,7 @@ fn create_md4_collision_candidate() -> Result<Vec<u8>> {
     let mut msg1 = vec![0u8; MD4::block_size()];
     rng.fill_bytes(&mut msg1);
     let mut block: Vec<u32> = to_w32_be(&msg1).iter().map(|w| u32::from_be(*w)).collect();
-    let state = apply_md4_constraints(&mut block, &MD4CollisionConstraints[0..16]);
+    let _state = apply_md4_constraints(&mut block, &MD4CollisionConstraints[0..16]);
     // apply_md4_round2_contraints(&mut block, state, &MD4CollisionConstraints);
     let tmp = verify_md4_constraints(&block, &MD4CollisionConstraints[0..16]);
     if tmp.is_err() {
