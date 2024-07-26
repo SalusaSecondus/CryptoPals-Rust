@@ -1,16 +1,28 @@
 use std::{
-    cell::RefCell, collections::HashMap, fmt::Debug, io::Write, marker::PhantomData, net::SocketAddr, sync::{atomic::AtomicBool, Arc}
+    cell::RefCell,
+    collections::HashMap,
+    fmt::Debug,
+    io::Write,
+    marker::PhantomData,
+    net::SocketAddr,
+    sync::{atomic::AtomicBool, Arc},
 };
 
 use anyhow::{bail, ensure, Context, Result};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use num_bigint::{BigInt, BigUint};
-use num_traits::{Num, One};
+use num_bigint::{BigInt, BigUint, RandBigInt};
+use num_traits::{Num,  Zero};
 use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
-use salusa_math::{group::{Group, GroupElement, ZMultElement, ZMultGroup}, rand_bigint};
+use salusa_math::{
+    ec::{AffinePoint, EcCurve, EcPoint},
+    group::{
+        GenericFieldElement, Group, GroupElement, ZAddElement, ZField, ZMultElement, ZMultGroup,
+    },
+    rand_bigint,
+};
 use std::{thread, time};
 use thread::sleep;
 use time::{Duration, SystemTime, UNIX_EPOCH};
@@ -904,11 +916,13 @@ impl Challenge56Oracle {
 }
 
 pub struct Challenge57_58Oracle<GE, T>
-where GE: GroupElement<T>,
-      T: Clone + Debug + Eq {
+where
+    GE: GroupElement<T>,
+    T: Clone + Debug + Eq,
+{
     pub key: GE,
     x: BigInt,
-    _pt: PhantomData<T>
+    _pt: PhantomData<T>,
 }
 
 impl Challenge57_58Oracle<ZMultElement, BigInt> {
@@ -921,15 +935,52 @@ impl Challenge57_58Oracle<ZMultElement, BigInt> {
         let g = BigInt::from_str_radix("4565356397095740655436854503483826832136106141639563487732438195343690437606117828318042418238184896212352329118608100083187535033402010599512641674644143", 10).unwrap();
         let g = group.wrap(g).unwrap();
         let key = g.scalar_mult(&x);
-        Self { key, x, _pt: PhantomData::default()}
+        Self {
+            key,
+            x,
+            _pt: PhantomData::default(),
+        }
+    }
+}
+
+impl
+    Challenge57_58Oracle<
+        EcPoint<
+            ZField,
+            GenericFieldElement<BigInt, ZField, ZAddElement, ZMultElement>,
+            BigInt,
+            ZAddElement,
+            ZMultElement,
+        >,
+        AffinePoint<GenericFieldElement<BigInt, ZField, ZAddElement, ZMultElement>>,
+    >
+{
+    pub fn new59() -> Self {
+        let gf = ZField::modulus(&BigInt::from_str_radix("233970423115425145524320034830162017933", 10).unwrap());
+        let a = gf.wrap((-95051i32).into()).unwrap();
+        let b = gf.wrap(11279326i32.into()).unwrap();
+        let order = BigInt::from_str_radix("29246302889428143187362802287225875743", 10).unwrap();
+        let x = OsRng.gen_bigint_range(&BigInt::zero(), &order);
+
+        let curve = EcCurve::new_with_strict(a, b, Some(order), false);
+
+        let g = curve.wrap(
+            AffinePoint::new(gf.wrap(182u32.into()).unwrap(), gf.wrap(85518893674295321206118380980485522083u128.into()).unwrap())
+        ).unwrap();
+        let key = g.scalar_mult(&x);
+        Self {
+            key,
+            x,
+            _pt: PhantomData::default(),
+        }
     }
 }
 
 impl<GE, T> Challenge57_58Oracle<GE, T>
-where GE: GroupElement<T>,
-      T: Clone + Debug + Eq {
-
-
+where
+    GE: GroupElement<T>,
+    T: Clone + Debug + Eq,
+{
     pub fn oracle(&self, h: &GE) -> Vec<u8> {
         let key = self.agree(h, &self.x);
         // println!("Oracle: {:?}", key);
