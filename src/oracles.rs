@@ -17,9 +17,9 @@ use rand::distributions::{Distribution, Uniform};
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
 use salusa_math::{
-    ec::{AffinePoint, EcCurve, EcPoint},
+    ec::{montgomery::{self, CRYPTO_PALS_MONTGOMERY, CRYPTO_PALS_MONTGOMERY_G}, weierstrass::{AffinePoint, EcCurve, EcPoint}},
     group::{
-        GenericFieldElement, Group, GroupElement, ZAddElement, ZField, ZMultElement, ZMultGroup,
+        Field as _, GenericFieldElement, Group, GroupElement, ZAddElement, ZField, ZMultElement, ZMultGroup
     },
     rand_bigint,
 };
@@ -915,7 +915,7 @@ impl Challenge56Oracle {
     }
 }
 
-pub struct Challenge57_58Oracle<GE, T>
+pub struct Set80Oracle<GE, T>
 where
     GE: GroupElement<T>,
     T: Clone + Debug + Eq,
@@ -925,7 +925,7 @@ where
     _pt: PhantomData<T>,
 }
 
-impl Challenge57_58Oracle<ZMultElement, BigInt> {
+impl Set80Oracle<ZMultElement, BigInt> {
     pub fn new57() -> Self {
         let p = BigInt::from_str_radix("7199773997391911030609999317773941274322764333428698921736339643928346453700085358802973900485592910475480089726140708102474957429903531369589969318716771", 10).unwrap();
         // let p_minus = &p - BigInt::one();
@@ -944,10 +944,9 @@ impl Challenge57_58Oracle<ZMultElement, BigInt> {
 }
 
 impl
-    Challenge57_58Oracle<
+    Set80Oracle<
         EcPoint<
             ZField,
-            GenericFieldElement<BigInt, ZField, ZAddElement, ZMultElement>,
             BigInt,
             ZAddElement,
             ZMultElement,
@@ -976,7 +975,39 @@ impl
     }
 }
 
-impl<GE, T> Challenge57_58Oracle<GE, T>
+impl Set80Oracle<montgomery::EcPoint<ZField, BigInt, ZAddElement, ZMultElement>, GenericFieldElement<BigInt, ZField, ZAddElement,ZMultElement>> {
+    pub fn new60() -> Self {
+        let gf = ZField::modulus(
+            &BigInt::from_str_radix("233970423115425145524320034830162017933", 10).unwrap(),
+        );
+        let a = gf.wrap(534.into()).unwrap();
+        let b = gf.mult_identity();
+        let order = BigInt::from_str_radix("29246302889428143187362802287225875743", 10).unwrap();
+
+        let curve = montgomery::EcCurve::new_with_strict(a, b, Some(order.clone()), false);
+
+        let g = curve
+        .wrap(CRYPTO_PALS_MONTGOMERY.field().wrap(4.into()).unwrap())
+        .unwrap();
+        let x = OsRng.gen_bigint_range(&BigInt::zero(), &order);
+
+        // let x = GenericFieldElement::wrap(x, CRYPTO_PALS_MONTGOMERY.field());
+        // let x = CRYPTO_PALS_MONTGOMERY.wrap(x);
+        let key = g.scalar_mult(&x);
+        
+        Self {
+            key,
+            x,
+            _pt: PhantomData::default()
+        }
+    }
+
+    pub fn peek(&self) -> &BigInt {
+        &self.x
+    }
+}
+
+impl<GE, T> Set80Oracle<GE, T>
 where
     GE: GroupElement<T>,
     T: Clone + Debug + Eq,
