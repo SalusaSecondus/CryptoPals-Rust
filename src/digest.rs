@@ -737,6 +737,41 @@ impl<T: Digest + Default> Digest for Hmac<T> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdentityDigest(Vec<u8>);
+
+impl Digest for IdentityDigest {
+    fn reset(&mut self) {
+        self.0.clear();
+    }
+
+    fn update(&mut self, input: &[u8]) {
+        self.0.extend_from_slice(input);
+    }
+
+    fn digest(&mut self) -> Vec<u8> {
+        self.0.clone()
+    }
+
+    fn digest_size() -> usize {
+        0
+    }
+
+    fn block_size() -> usize {
+        1
+    }
+
+    fn oid() -> Option<&'static ObjectIdentifier<'static>> {
+        None
+    }
+}
+
+impl Default for IdentityDigest {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::oracles::Challenge29Oracle;
