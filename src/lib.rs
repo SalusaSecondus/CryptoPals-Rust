@@ -28,6 +28,7 @@ mod rsa;
 mod set7;
 mod set8;
 mod srp;
+mod ecdsa;
 
 #[derive(Debug)]
 pub struct PublicKey<T>(T);
